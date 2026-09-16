@@ -1,0 +1,1596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Karupparayan Chit Ledger</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#8C2A32">
+<link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAIAAADdvvtQAAAFkklEQVR4nO3aQY4URxCF4cJCHIYlmpP4BLP2WVh7zQl8Ek5kzcKLRKWmZ8A9FZkR70X+3xbBVEb+HdUYf/j6+csBXPVH9QPAGwEhhIAQQkAIISCEEBBCCAghBIQQAkIIASGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQj5WP4CKp+eX9/6W79+Y3q4BXcjlkT9kw6Q2OvCUaB7/EZvE1PyQCdE88qMbx9TzYIXdvOl8nn4ldTuPWjp3xuN1yqjJScS7udNpIdkfwCudOw0WkvGjW6dzyzojy4duk84t04z8/imjZT0nu9M59W433Gu8VpHNBtqknpPLeQ0ydxnldBarSH0DbVvPSXwC0gGJzy6N8hxEA3p6fhGZ2j9//1v9CMehNJA7igFpTkqB4GTkApKa0Vg/IktokJrPoRaQ2nQ0SU1JKCCpuRw/Lx6pJXQozUolIJ2JuBCZmERAIrO49XrlqC2hQ2Nu9QEpTMFX+fSKAyo//5t+tWwEl9BRPcPKgDTrcVQ4ybKAZOv5/ZrRXEJH3TxrApKtx1rJVOu/REt5ZMHILqESBQGxftbJn212QMr1PL5alJdQ8oRTA1Kup5PMOfMd6If3LhXlJZQpLyDWT6a0aScFJF5Py3WSM3NeYde1zO69MgJi/VRJmPzygMTrCdKPb/X8d3+F6Rcgbm1AvdfPoJ/g0lvYegPp372+hQHtsH4G/RDX3cW+G0j/1i2sCmif9TPo57joRvbdQJhi04BWLAz9JbTCkoB2e3+5WHEvO26gdatiwyU0PyDWj7Lpt7PdBlq9JHZbQtsFhLkmByT+/tptPbxp7h2xgebbKtONAtrqXtNsFFCmfWKdGZDyF6B9bvQRE2+KDbTKJsluEdAmd1lii4Cq7BDutIBkvwDtcIsXzLovNtBa7fNtHlD7+yvXPCAFvSPuHFDvmxPROSAdjVOeE5DgX8Ea39ksU26NDYSQngEJrh/BR5qiZ0BI0zAg2c+67INFNAwImboFJP4pF3+8C7oFhGQElK3ZEmoVULO7sdAqIBedQu8TUKdbMdInIC9tcm8SUJv7sNMkIEc9ou8QUI+bMNUhIF8N0p8T0PdvH6f8ORc0uIMqU26NDYQQ74AarB/3I3gHhHLGAbl/dk/WBzEOCAqmBZT8FzHrT+1r+ceZdV9sIIRYBtRs/Qymh7IMCDpmBpTzNcj0k/qItKNNvCk2EELMAmq8fga7A5oFBDWTA1r6Ncju03nN6mPOvSM2EEJsAtpk/QxGh50fUOH/XIb/Nf12bC77z78+/eqXjD6vd35zKBdLXmEsIU0r7sXmOxA0ERBCVgXEW0zNohthAyFkYUAsIR3r7oINhJC1AbGEFCy9BTYQQpYHxBKqtXr+GRuIhqokTJ5XGEKSAmIJ5cuZed4GoqFMadPmFYaQ1IBYQjky55y9gWhoteQJF7zCaGid/NnyHQghNQGxhFYomWrZBqKhuarm+eHr5y8lP3h4en4p/OltFH4ai78DsYfiamdY/yWahiLKp1cf0CEwBVMKc5MI6NCYhReRiakEdMhMxILOrIQCOpTmokxqSloBHWLTEaQ2H7mADr0Z6RCcjNwDDWNS/GfGk2A6g+IGOslOLZnyHKQDOrRnl0N8AtIPN2z7OhNPZ1DfQCeLaU7kcl6Ppxw2WUUu6Qw2G+jkNd/3sjud2eMOLVeRXTqD5UMPbTIyTWcwfvTBOiPrdAb7AwznTViU1KCbU5+TDOILqVM6Q7fzDGoLqV83p7YHG25vLjmmxtHc2uKQQ0JMm0Rza7sDD69v+kJSG+byGiP4gRqu8funDEghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIIQSEEAJCCAEhhIAQQkAIISCEEBBCCAghBISQ/wDsVeb0Zqvy6gAAAABJRU5ErkJggg==">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FBF7EF;
+    --surface:#FFFFFF;
+    --ink:#2B1B12;
+    --ink-soft:#6B5A4E;
+    --line:#E7DCC9;
+    --maroon:#8C2A32;
+    --maroon-dark:#6E2028;
+    --gold:#C08A2E;
+    --gold-soft:#F1E2BE;
+    --green:#3C7A44;
+    --green-soft:#E4F1E1;
+    --red:#B33F32;
+    --red-soft:#F7E4DF;
+    --blue:#2F6E8C;
+    --blue-soft:#E1EEF3;
+    --gray-soft:#F1ECE1;
+    --radius:10px;
+    --shadow:0 1px 2px rgba(43,27,18,0.06), 0 6px 18px rgba(43,27,18,0.05);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    font-size:14px;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.display{font-family:'Fraunces',serif;}
+  .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";}
+  .mono{font-family:'JetBrains Mono',monospace;}
+  button{font-family:inherit;cursor:pointer;}
+  input,select{font-family:inherit;}
+
+  /* ---- App shell ---- */
+  #app{display:flex;min-height:100vh;}
+  .sidebar{
+    width:240px;flex:0 0 240px;background:var(--maroon);
+    color:#F6E9DC;padding:20px 14px;position:sticky;top:0;height:100vh;overflow-y:auto;
+  }
+  .brand{padding:2px 8px 18px;border-bottom:1px solid rgba(246,233,220,0.18);margin-bottom:14px;}
+  .brand .mark{
+    width:34px;height:34px;border-radius:50%;background:var(--gold);
+    display:flex;align-items:center;justify-content:center;color:var(--maroon-dark);
+    font-family:'Fraunces',serif;font-weight:700;font-size:17px;margin-bottom:10px;
+  }
+  .brand h1{font-size:18px;margin:0 0 2px;font-weight:600;letter-spacing:0.2px;color:#fff;}
+  .brand p{margin:0;font-size:11.5px;color:#E3C9B4;letter-spacing:0.3px;text-transform:uppercase;}
+
+  .nav-section-label{font-size:10.5px;text-transform:uppercase;letter-spacing:0.8px;color:#D9B79C;margin:16px 8px 6px;}
+  .nav-item{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:9px 10px;border-radius:8px;color:#F6E9DC;text-decoration:none;
+    font-size:13.5px;font-weight:500;margin-bottom:2px;background:transparent;border:none;width:100%;text-align:left;
+  }
+  .nav-item:hover{background:rgba(246,233,220,0.10);}
+  .nav-item.active{background:rgba(246,233,220,0.16);}
+  .nav-item .dot{width:8px;height:8px;border-radius:50%;background:var(--gold);flex:0 0 auto;}
+  .nav-item small{color:#D9B79C;font-weight:400;}
+  .add-chit-btn{
+    margin-top:10px;width:100%;padding:9px 10px;border-radius:8px;border:1px dashed rgba(246,233,220,0.4);
+    background:transparent;color:#F1E2BE;font-size:13px;font-weight:500;
+  }
+  .add-chit-btn:hover{background:rgba(246,233,220,0.08);}
+
+  .main{flex:1;min-width:0;padding:26px 32px 60px;}
+  .topbar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;}
+  .topbar h2{font-size:23px;margin:0;font-weight:600;}
+  .topbar .sub{color:var(--ink-soft);font-size:12.5px;margin-top:2px;}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px;margin-bottom:18px;}
+  .card h3{font-size:14px;margin:0 0 12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--ink-soft);}
+
+  .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px;}
+  .stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow);}
+  .stat .label{font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--ink-soft);margin-bottom:6px;}
+  .stat .value{font-family:'Fraunces',serif;font-size:22px;font-weight:600;}
+  .stat .value.pos{color:var(--green);}
+  .stat .value.neg{color:var(--red);}
+
+  table{border-collapse:collapse;width:100%;font-size:12.5px;}
+  th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap;}
+  thead th{background:var(--gold-soft);color:var(--maroon-dark);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.3px;position:sticky;top:0;}
+  tbody tr:hover{background:#FBF4E8;}
+  td.right, th.right{text-align:right;}
+  .table-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px;}
+  .table-scroll table{min-width:600px;}
+
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;}
+  .badge.pos{background:var(--green-soft);color:var(--green);}
+  .badge.neg{background:var(--red-soft);color:var(--red);}
+
+  /* payment grid cells */
+  .pay-cell{
+    width:30px;height:26px;border-radius:6px;border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;
+    cursor:pointer;user-select:none;background:var(--gray-soft);color:var(--ink-soft);
+  }
+  .pay-cell.paid{background:var(--green-soft);color:var(--green);border-color:#c7e0c4;}
+  .pay-cell.pending{background:var(--red-soft);color:var(--red);border-color:#edc9be;}
+  .pay-cell.late{background:var(--blue-soft);color:var(--blue);border-color:#c3dde8;}
+  .pay-cell.future{background:transparent;color:#CBBFAF;border-style:dashed;cursor:default;}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-soft);margin-top:10px;}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .legend i{width:14px;height:14px;border-radius:4px;display:inline-block;}
+
+  input.cell-input{
+    width:100%;border:1px solid transparent;background:transparent;padding:3px 4px;border-radius:4px;
+    font-size:12.5px;font-family:inherit;color:var(--ink);
+  }
+  input.cell-input:hover{border-color:var(--line);}
+  input.cell-input:focus{outline:none;border-color:var(--gold);background:#fff;}
+
+  .btn{
+    padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:#fff;
+    font-size:12.5px;font-weight:600;color:var(--ink);
+  }
+  .btn:hover{background:var(--gray-soft);}
+  .btn.primary{background:var(--maroon);border-color:var(--maroon);color:#fff;}
+  .btn.primary:hover{background:var(--maroon-dark);}
+  .btn.ghost{background:transparent;border-color:transparent;color:var(--maroon);}
+  .btn.danger{color:var(--red);}
+  .btn.small{padding:5px 10px;font-size:11.5px;}
+
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;}
+  .field input, .field select{
+    width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:#fff;color:var(--ink);
+  }
+  .field input:focus, .field select:focus{outline:none;border-color:var(--gold);}
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+
+  .modal-backdrop{
+    position:fixed;inset:0;background:rgba(43,27,18,0.45);display:flex;align-items:center;justify-content:center;
+    z-index:50;padding:16px;
+  }
+  .modal{background:#fff;border-radius:14px;padding:22px 24px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,0.25);}
+  .modal h3{margin:0 0 14px;font-size:16px;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;}
+
+  .empty-state{text-align:center;padding:50px 20px;color:var(--ink-soft);}
+  .empty-state .mark-big{font-family:'Fraunces',serif;font-size:34px;color:var(--gold);margin-bottom:6px;}
+
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
+  .name-cell{display:flex;flex-direction:column;}
+  .name-cell b{font-size:12.5px;font-weight:600;}
+  .name-cell small{color:var(--ink-soft);font-size:10.5px;}
+
+  .sticky-col{position:sticky;left:0;background:inherit;z-index:2;}
+  thead .sticky-col{background:var(--gold-soft);z-index:3;}
+
+  @media (max-width:800px){
+    .sidebar{position:fixed;left:-260px;top:0;transition:left .2s;z-index:60;box-shadow:4px 0 20px rgba(0,0,0,0.2);}
+    .sidebar.open{left:0;}
+    .main{padding:66px 14px 60px;}
+    .mobile-topbar{display:flex;}
+    .sidebar-scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:55;}
+    .sidebar-scrim.open{display:block;}
+  }
+  .mobile-topbar{
+    display:none;position:fixed;top:0;left:0;right:0;height:52px;z-index:45;
+    background:var(--maroon);color:#fff;align-items:center;gap:10px;padding:0 14px;
+    box-shadow:0 2px 10px rgba(0,0,0,0.15);
+  }
+  .mobile-topbar button{
+    background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.3);color:#fff;
+    border-radius:8px;padding:8px 12px;font-size:18px;line-height:1;
+  }
+  .mobile-topbar .title{font-family:'Fraunces',serif;font-weight:600;font-size:15px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script type="module">
+/* ============================= FIREBASE SETUP =============================
+   1. Go to https://console.firebase.google.com -> Add project (free "Spark" plan is enough)
+   2. Left menu -> Build -> Firestore Database -> Create database (any region, production mode)
+   3. Left menu -> Build -> Authentication -> Get started -> Sign-in method -> enable "Email/Password"
+   4. Authentication -> Users tab -> Add user -> repeat for each of your 5 people (email + a password)
+   5. Click the gear icon (top left) -> Project settings -> scroll to "Your apps" -> Add app -> Web (</>)
+      -> copy the firebaseConfig object it gives you and paste its values below.
+   6. Firestore Database -> Rules tab -> paste the rules from the guide, then Publish.
+============================================================================= */
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js';
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
+  from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-auth.js';
+import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp, enableIndexedDbPersistence }
+  from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-firestore.js';
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBofvFbVFBL-bwPyiR1FKAM6vmjDcoM3sY",
+  authDomain: "chitskovil.firebaseapp.com",
+  projectId: "chitskovil",
+  storageBucket: "chitskovil.firebasestorage.app",
+  messagingSenderId: "629125650408",
+  appId: "1:629125650408:web:a3902245e908cf9d80b65d"
+};
+const FIREBASE_CONFIGURED = FIREBASE_CONFIG.apiKey !== "PASTE_YOUR_API_KEY";
+
+let fbApp=null, auth=null, db=null, currentUser=null, authLoading=true, cloudOk=true, unsubscribeSnapshot=null;
+let cloudMeta = { updatedBy:null };
+
+if(FIREBASE_CONFIGURED){
+  fbApp = initializeApp(FIREBASE_CONFIG);
+  auth = getAuth(fbApp);
+  db = getFirestore(fbApp);
+  try{ enableIndexedDbPersistence(db); }catch(e){ /* fine without offline cache */ }
+}
+
+/* ============================= STATE ============================= */
+let state = null;
+let ui = { view:'dashboard', chitId:null, modal:null, sidebarOpen:false, reportTab:'month', reportMonth:null };
+let saveTimer = null;
+
+function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2,9); }
+
+function defaultState(){
+  const pOrganiser = {id:uid('person'), name:'Karupparayan Temple (organiser)', refBy:'Temple'};
+  const pA = {id:uid('person'), name:'Sample Member A', refBy:''};
+  const pB = {id:uid('person'), name:'Sample Member B', refBy:''};
+  const chit = {
+    id: uid('chit'), name:'Sample 10,000 Chit', chitValue:10000, totalMembers:10, durationMonths:10,
+    startMonth: currentMonthKey(), openingCarry:0, payoutOverride:{}, distributionSchedule:{},
+    members: [
+      {id:uid('m'), sno:1, personId:pOrganiser.id, payments:{}, slots:[]},
+      {id:uid('m'), sno:2, personId:pA.id, payments:{}, slots:[{id:uid('slot'), takenChitNo:1, chitTakenAmount:9000}]},
+      {id:uid('m'), sno:3, personId:pB.id, payments:{}, slots:[{id:uid('slot'), takenChitNo:2, chitTakenAmount:9100}]},
+    ]
+  };
+  return { people: [pOrganiser, pA, pB], chits: [chit] };
+}
+
+function getOrCreatePerson(name){
+  name = (name||'').trim() || 'Unnamed';
+  let existing = state.people.find(p=>p.name.toLowerCase()===name.toLowerCase());
+  if(existing) return existing.id;
+  const id = uid('person');
+  state.people.push({id, name, refBy:''});
+  return id;
+}
+function personName(id){
+  const p = state.people.find(p=>p.id===id);
+  return p ? p.name : '—';
+}
+function personRefBy(id){
+  const p = state.people.find(p=>p.id===id);
+  return p ? (p.refBy||'') : '';
+}
+
+/* ============================= DATE HELPERS ============================= */
+function currentMonthKey(){
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+function addMonths(ym, n){
+  const [y,m] = ym.split('-').map(Number);
+  const d = new Date(y, m-1+n, 1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+function monthLabel(ym){
+  const [y,m] = ym.split('-').map(Number);
+  const d = new Date(y, m-1, 1);
+  return d.toLocaleDateString('en-US',{month:'short', year:'2-digit'});
+}
+function monthDiff(a,b){
+  const [ay,am]=a.split('-').map(Number), [by,bm]=b.split('-').map(Number);
+  return (by-ay)*12+(bm-am);
+}
+function fmt(n){
+  n = Math.round(n||0);
+  const neg = n<0; n=Math.abs(n);
+  const s = n.toLocaleString('en-IN');
+  return (neg?'-':'') + '₹' + s;
+}
+
+/* ============================= PERSISTENCE (Cloud: Firestore) ============================= */
+const CLOUD_DOC = () => doc(db, 'chitLedgerApp', 'sharedData');
+
+function subscribeToCloudData(){
+  if(unsubscribeSnapshot) unsubscribeSnapshot();
+  unsubscribeSnapshot = onSnapshot(CLOUD_DOC(), (snap)=>{
+    cloudOk = true;
+    if(snap.exists() && snap.data().payload){
+      state = JSON.parse(snap.data().payload);
+      migrate();
+      cloudMeta.updatedBy = snap.data().updatedBy || null;
+    } else if(!state){
+      state = defaultState();
+      persist(); // first run for this project — seed the shared document
+    }
+    render();
+  }, (err)=>{
+    console.warn('Firestore listen failed:', err);
+    cloudOk = false;
+    render();
+  });
+}
+
+function scheduleSave(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(persist, 350);
+}
+
+async function persist(){
+  if(!auth || !auth.currentUser || !state) return;
+  try{
+    await setDoc(CLOUD_DOC(), {
+      payload: JSON.stringify(state),
+      updatedAt: serverTimestamp(),
+      updatedBy: auth.currentUser.email
+    });
+    cloudOk = true;
+  }catch(e){
+    console.warn('Cloud save failed:', e);
+    cloudOk = false;
+    render();
+  }
+}
+function migrate(){
+  if(!Array.isArray(state.people)) state.people = [];
+  state.people.forEach(p=>{ if(p.refBy===undefined) p.refBy=''; });
+  (state.chits||[]).forEach(c=>{
+    if(!c.payoutOverride) c.payoutOverride = {};
+    if(!c.distributionSchedule) c.distributionSchedule = {};
+    if(!c.openingCarry) c.openingCarry = 0;
+    (c.members||[]).forEach(m=>{
+      if(!m.payments) m.payments = {};
+      if(!m.lateFor) m.lateFor = {};
+      // Migrate old single-name field to the shared people directory.
+      if(m.name!==undefined && !m.personId){
+        m.personId = getOrCreatePerson(m.name);
+        delete m.name;
+      }
+      if(!m.personId){
+        m.personId = getOrCreatePerson('Unnamed');
+      }
+      // Migrate old per-membership refBy up to the person record (Ref By is now shared).
+      if(m.refBy!==undefined){
+        const person = state.people.find(p=>p.id===m.personId);
+        if(person && !person.refBy && m.refBy) person.refBy = m.refBy;
+        delete m.refBy;
+      }
+      // Migrate old single taken-chit-no/amount fields into the slots array.
+      if(!Array.isArray(m.slots)){
+        m.slots = [];
+        if(m.takenChitNo!==undefined && m.takenChitNo!==null){
+          m.slots.push({id:uid('slot'), takenChitNo:m.takenChitNo, chitTakenAmount:m.chitTakenAmount??null});
+        }
+        delete m.takenChitNo;
+        delete m.chitTakenAmount;
+      }
+    });
+  });
+}
+
+/* ============================= DERIVED CALCULATIONS ============================= */
+// Core formula engine mirroring the workbook's DB tabs:
+//   Monthly Amount        = Chit Value / Total Members
+//   Chit Collection[m]    = Monthly Amount x (members marked "paid" that month)
+//   Pending Received[m]   = Monthly Amount x (members marked "late" that month, i.e. an overdue due settled now)
+//   Total Collection[m]   = Chit Collection[m] + Pending Received[m]
+//   Chit Paid[m]          = manual override, else the Chit Taken Amount of the member whose Taken Chit No = month index
+//   Opening[m]             = Closing[m-1]   (Opening[1] = Opening Carry-forward)
+//   Closing[m]             = Opening[m] + Total Collection[m] - Chit Paid[m]
+function monthlyAmount(chit){
+  return chit.totalMembers ? chit.chitValue / chit.totalMembers : 0;
+}
+function payoutForMonth(chit, monthIndex, monthKey){
+  if(chit.payoutOverride && chit.payoutOverride[monthKey]!==undefined && chit.payoutOverride[monthKey]!=='' ){
+    return Number(chit.payoutOverride[monthKey]);
+  }
+  let total = 0, matched = false;
+  chit.members.forEach(m=>{
+    (m.slots||[]).forEach(s=>{
+      if(Number(s.takenChitNo)===monthIndex+1 && s.chitTakenAmount){ total += Number(s.chitTakenAmount); matched = true; }
+    });
+  });
+  if(!matched && chit.distributionSchedule && chit.distributionSchedule[monthIndex+1]!==undefined){
+    return Number(chit.distributionSchedule[monthIndex+1])||0;
+  }
+  return total;
+}
+function scheduledAmount(chit, chitNo){
+  if(!chit.distributionSchedule) return null;
+  const v = chit.distributionSchedule[chitNo];
+  return (v===undefined || v==='') ? null : Number(v);
+}
+function parseScheduleText(text){
+  // Accepts lines/comma-separated pairs like "1:22000", "1-22000", "1 22000", "1=22000"
+  const schedule = {};
+  (text||'').split(/[\n,]+/).forEach(line=>{
+    const m = line.trim().match(/^(\d+)\s*[:\-=\s]\s*(\d+(?:\.\d+)?)$/);
+    if(m) schedule[Number(m[1])] = Number(m[2]);
+  });
+  return schedule;
+}
+function scheduleToText(schedule){
+  if(!schedule) return '';
+  return Object.keys(schedule).map(Number).sort((a,b)=>a-b)
+    .map(no=>`${no}: ${schedule[no]}`).join('\n');
+}
+function chitLedger(chit){
+  const rows = [];
+  let opening = Number(chit.openingCarry)||0;
+  const mAmt = monthlyAmount(chit);
+  for(let i=0;i<chit.durationMonths;i++){
+    const mk = addMonths(chit.startMonth, i);
+    let paid=0, late=0, pending=0;
+    chit.members.forEach(m=>{
+      const st = m.payments[mk];
+      if(st==='paid') paid++;
+      else if(st==='late') late++;
+      else if(st==='pending') pending++;
+    });
+    const collection = paid*mAmt;
+    const pendingReceived = late*mAmt;
+    const totalCollection = collection+pendingReceived;
+    const chitPaid = payoutForMonth(chit, i, mk);
+    const closing = opening+totalCollection-chitPaid;
+    rows.push({monthKey:mk, idx:i+1, opening, collection, pendingReceived, totalCollection, chitPaid, closing, outstanding:pending*mAmt});
+    opening = closing;
+  }
+  return rows;
+}
+
+/* ============================= RENDER ROOT ============================= */
+function render(){
+  const app = document.getElementById('app');
+
+  if(!FIREBASE_CONFIGURED){
+    app.innerHTML = renderSetupNeeded();
+    return;
+  }
+  if(authLoading){
+    app.innerHTML = `<div class="empty-state" style="padding-top:90px;"><div class="mark-big">&#3495;</div><p>Connecting…</p></div>`;
+    return;
+  }
+  if(!currentUser){
+    app.innerHTML = renderLoginScreen();
+    attachLoginEvents();
+    return;
+  }
+  if(!state){
+    app.innerHTML = `<div class="empty-state" style="padding-top:90px;"><div class="mark-big">&#3495;</div><p>Loading the ledger from the cloud…</p></div>`;
+    return;
+  }
+
+  app.innerHTML = `
+    <div class="mobile-topbar">
+      <button id="btnMenu" aria-label="Menu">&#9776;</button>
+      <span class="title">Karupparayan Chit Ledger</span>
+    </div>
+    <div class="sidebar-scrim ${ui.sidebarOpen?'open':''}" id="sidebarScrim"></div>
+    ${cloudOk ? '' : `<div id="storageBanner" style="position:sticky;top:0;z-index:30;background:#F1E2BE;color:#6E2028;padding:8px 16px;font-size:12.5px;text-align:center;">
+      You're offline — changes are queued and will sync once your connection is back.
+    </div>`}
+    <div class="sidebar ${ui.sidebarOpen?'open':''}" id="sidebar">${renderSidebar()}</div>
+    <div class="main">${renderMain()}</div>
+  `;
+  attachEvents();
+  if(ui.modal) renderModal();
+}
+
+function renderSetupNeeded(){
+  return `<div class="empty-state" style="padding-top:70px;max-width:480px;margin:0 auto;">
+    <div class="mark-big">&#3495;</div>
+    <h3 style="margin:6px 0;">Cloud sync isn't set up yet</h3>
+    <p>Open this file's source and fill in <code>FIREBASE_CONFIG</code> near the top of the script with your own Firebase project's values, then reload. See the setup guide for exact steps.</p>
+  </div>`;
+}
+
+function renderLoginScreen(){
+  return `
+  <div style="min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;padding:20px;">
+    <div class="modal" style="max-width:360px;">
+      <div style="text-align:center;margin-bottom:16px;">
+        <div class="mark" style="margin:0 auto 10px;">&#3495;</div>
+        <h3 style="margin:0;">Karupparayan Chit Ledger</h3>
+        <p class="sub" style="margin-top:4px;color:var(--ink-soft);font-size:12.5px;">Sign in to access the shared ledger</p>
+      </div>
+      <div class="field"><label>Email</label><input id="loginEmail" type="email" placeholder="you@example.com" autocomplete="username"/></div>
+      <div class="field"><label>Password</label><input id="loginPassword" type="password" placeholder="••••••••" autocomplete="current-password"/></div>
+      <div id="loginError" style="color:var(--red);font-size:12.5px;margin-bottom:8px;min-height:16px;"></div>
+      <button class="btn primary" id="btnLogin" style="width:100%;">Sign In</button>
+      <p style="font-size:11px;color:var(--ink-soft);margin-top:14px;text-align:center;">Accounts are created by your admin in the Firebase console — ask them if you don't have a login yet.</p>
+    </div>
+  </div>`;
+}
+
+function attachLoginEvents(){
+  const doLogin = async ()=>{
+    const email = document.getElementById('loginEmail').value.trim();
+    const pass = document.getElementById('loginPassword').value;
+    const errEl = document.getElementById('loginError');
+    errEl.textContent = '';
+    if(!email || !pass){ errEl.textContent = 'Enter both email and password.'; return; }
+    try{
+      await signInWithEmailAndPassword(auth, email, pass);
+    }catch(e){
+      errEl.textContent = friendlyAuthError(e);
+    }
+  };
+  document.getElementById('btnLogin').addEventListener('click', doLogin);
+  document.getElementById('loginPassword').addEventListener('keydown', (e)=>{ if(e.key==='Enter') doLogin(); });
+}
+
+function friendlyAuthError(e){
+  const code = (e && e.code) || '';
+  if(code.includes('wrong-password') || code.includes('invalid-credential')) return 'Incorrect email or password.';
+  if(code.includes('user-not-found')) return "No account with that email — ask your admin to add one.";
+  if(code.includes('too-many-requests')) return 'Too many attempts — wait a moment and try again.';
+  if(code.includes('network-request-failed')) return 'No internet connection.';
+  return 'Could not sign in: ' + ((e && e.message) || 'unknown error');
+}
+
+function renderSidebar(){
+  let items = `<button class="nav-item ${ui.view==='dashboard'?'active':''}" data-nav="dashboard">
+      <span>&#9776; Temple Dashboard</span>
+    </button>
+    <button class="nav-item ${ui.view==='reports'?'active':''}" data-nav="reports">
+      <span>&#128202; Reports</span>
+    </button>
+    <button class="nav-item ${ui.view==='people'?'active':''}" data-nav="people">
+      <span>&#128101; People</span>
+    </button>`;
+  items += `<div class="nav-section-label">Chit Groups</div>`;
+  state.chits.forEach(c=>{
+    items += `<button class="nav-item ${ui.view==='chit'&&ui.chitId===c.id?'active':''}" data-nav="chit" data-id="${c.id}">
+      <span><i class="dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--gold);margin-right:7px;"></i>${escapeHtml(c.name)}</span>
+    </button>`;
+  });
+  items += `<button class="add-chit-btn" id="btnNewChit">+ New Chit Group</button>`;
+  items += `
+    <div class="nav-section-label">Cloud &amp; Backup</div>
+    <p style="font-size:11px;color:#F1E2BE;margin:0 4px 8px;">
+      ${cloudOk ? '&#9679; Synced to cloud' : '&#9679; Offline — will sync when reconnected'}
+      ${cloudMeta.updatedBy ? `<br><span style="color:#D9B79C;">Last updated by ${escapeHtml(cloudMeta.updatedBy)}</span>` : ''}
+    </p>
+    <button class="add-chit-btn" id="btnExport">&#8681; Download Backup</button>
+    <button class="add-chit-btn" id="btnImportTrigger">&#8593; Restore Backup</button>
+    <input type="file" id="fileImport" accept="application/json" style="display:none;">
+    <button class="add-chit-btn" id="btnSignOut">&#8617; Sign Out${currentUser?.email ? ' ('+escapeHtml(currentUser.email)+')' : ''}</button>
+    <p style="font-size:10.5px;color:#D9B79C;margin:8px 4px 0;line-height:1.4;">
+      All 5 users see the same live data. A local backup is still worth keeping occasionally as a personal safety copy.
+    </p>
+  `;
+  return `
+    <div class="brand">
+      <div class="mark">&#3495;</div>
+      <h1>Karupparayan Chit Ledger</h1>
+      <p>Temple Chit Fund Tracker</p>
+    </div>
+    ${items}
+  `;
+}
+
+function renderMain(){
+  if(ui.view==='dashboard') return renderDashboard();
+  if(ui.view==='people') return renderPeople();
+  if(ui.view==='reports') return renderReports();
+  const chit = state.chits.find(c=>c.id===ui.chitId);
+  if(!chit) return `<div class="empty-state"><div class="mark-big">&#3495;</div><p>Select or create a chit group to get started.</p></div>`;
+  return renderChitView(chit);
+}
+
+/* ============================= PEOPLE (cross-chit view) ============================= */
+function renderPeople(){
+  if(state.people.length===0){
+    return `<div class="topbar"><div><h2>People</h2><div class="sub">Every person and every chit group they're part of</div></div></div>
+      <div class="empty-state"><div class="mark-big">&#3495;</div><p>No members added yet.</p></div>`;
+  }
+  const rows = state.people.map(p=>{
+    let groups = [], slotCount=0, totalTaken=0, pendingMonths=0;
+    state.chits.forEach(c=>{
+      c.members.filter(m=>m.personId===p.id).forEach(m=>{
+        groups.push(c.name);
+        slotCount += (m.slots||[]).length;
+        (m.slots||[]).forEach(s=>{ totalTaken += Number(s.chitTakenAmount)||0; });
+        pendingMonths += Object.values(m.payments||{}).filter(v=>v==='pending').length;
+      });
+    });
+    if(groups.length===0) return '';
+    return `<tr>
+      <td><b>${escapeHtml(p.name)}</b></td>
+      <td><input class="cell-input" data-field="personRefBy" data-person="${p.id}" value="${escapeAttr(p.refBy||'')}" placeholder="Ref"/></td>
+      <td>${groups.map(g=>`<span class="badge" style="background:var(--gold-soft);color:var(--maroon-dark);margin-right:4px;">${escapeHtml(g)}</span>`).join('')}</td>
+      <td class="right num">${slotCount}</td>
+      <td class="right num">${fmt(totalTaken)}</td>
+      <td class="right">${pendingMonths>0?`<span class="badge neg">${pendingMonths}</span>`:'0'}</td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="topbar"><div><h2>People</h2><div class="sub">Members are shared across chit groups — the same person can hold a spot in more than one group, and Ref By is set once here for all of them</div></div></div>
+    <div class="card">
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Name</th><th>Ref By</th><th>Chit Groups</th><th class="right">Chit Slots</th><th class="right">Total Taken (₹)</th><th class="right">Unpaid Months</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="6" style="text-align:center;color:var(--ink-soft);padding:20px;">Not linked to any chit group yet.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+/* ============================= REPORTS ============================= */
+const REPORT_TABS = [
+  {id:'month', label:'Month-wise'},
+  {id:'chit', label:'Chit-wise'},
+  {id:'person', label:'Person-wise'},
+  {id:'pending', label:'Pending List'},
+  {id:'distribution', label:'Chit Distribution'},
+  {id:'nontaker', label:'Non Chit-Takers'},
+];
+
+function renderReports(){
+  if(state.chits.length===0){
+    return `<div class="topbar"><div><h2>Reports</h2></div></div>
+      <div class="empty-state"><div class="mark-big">&#3495;</div><p>No chit groups yet. Create one from the sidebar.</p></div>`;
+  }
+  const tabs = REPORT_TABS.map(t=>`
+    <button class="btn ${ui.reportTab===t.id?'primary':''} small" data-report-tab="${t.id}">${t.label}</button>
+  `).join('');
+
+  let body = '';
+  if(ui.reportTab==='month') body = renderReportMonth();
+  else if(ui.reportTab==='chit') body = renderReportChitWise();
+  else if(ui.reportTab==='person') body = renderPeople();
+  else if(ui.reportTab==='pending') body = renderReportPending();
+  else if(ui.reportTab==='distribution') body = renderReportDistribution();
+  else if(ui.reportTab==='nontaker') body = renderReportNonTaker();
+
+  return `
+    <div class="topbar"><div><h2>Reports</h2><div class="sub">Every angle on the temple's chit funds — by month, by group, by person, and by outstanding dues</div></div></div>
+    <div class="toolbar" style="margin-bottom:16px;">${tabs}</div>
+    ${body}
+  `;
+}
+
+function renderReportMonth(){
+  const months = allMonthsUnion();
+  if(months.length===0) return `<div class="empty-state"><p>No months to report on yet.</p></div>`;
+  if(!ui.reportMonth || !months.includes(ui.reportMonth)){
+    ui.reportMonth = months[months.length-1];
+  }
+  const mk = ui.reportMonth;
+
+  const monthOptions = months.map(m=>`<option value="${m}" ${m===mk?'selected':''}>${monthLabel(m)}</option>`).join('');
+
+  let totalOpening=0,totalCollection=0,totalPendingRecv=0,totalTotalCollection=0,totalChitPaid=0,totalClosing=0;
+  const groupRows = [];
+  const paymentRows = [];
+  state.chits.forEach(c=>{
+    const rows = chitLedger(c);
+    const row = rows.find(r=>r.monthKey===mk);
+    if(!row) return;
+    totalOpening+=row.opening; totalCollection+=row.collection; totalPendingRecv+=row.pendingReceived;
+    totalTotalCollection+=row.totalCollection; totalChitPaid+=row.chitPaid; totalClosing+=row.closing;
+    groupRows.push(`<tr>
+      <td><button class="btn ghost small" data-nav="chit" data-id="${c.id}">${escapeHtml(c.name)}</button></td>
+      <td class="right num">${fmt(row.opening)}</td>
+      <td class="right num">${fmt(row.collection)}</td>
+      <td class="right num">${fmt(row.pendingReceived)}</td>
+      <td class="right num" style="font-weight:600;">${fmt(row.totalCollection)}</td>
+      <td class="right num">${fmt(row.chitPaid)}</td>
+      <td class="right num" style="font-weight:700;">${fmt(row.closing)}</td>
+    </tr>`);
+    c.members.forEach(m=>{
+      const st = m.payments[mk];
+      if(!st) return;
+      paymentRows.push({group:c.name, name:personName(m.personId), refBy:personRefBy(m.personId), status:st, amount:monthlyAmount(c)});
+    });
+  });
+  const statusLabel = {paid:'Paid', pending:'Pending', late:'Late-paid'};
+  const statusBadge = {paid:'pos', pending:'neg', late:''};
+  const payHtml = paymentRows.length ? paymentRows.map(r=>`
+    <tr>
+      <td>${escapeHtml(r.group)}</td>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${escapeHtml(r.refBy||'')}</td>
+      <td><span class="badge ${statusBadge[r.status]||''}" style="${r.status==='late'?'background:var(--blue-soft);color:var(--blue);':''}">${statusLabel[r.status]||r.status}</span></td>
+      <td class="right num">${fmt(r.amount)}</td>
+    </tr>`).join('') : `<tr><td colspan="5" style="text-align:center;color:var(--ink-soft);padding:16px;">No payment activity recorded for this month.</td></tr>`;
+
+  return `
+    <div class="card">
+      <div class="toolbar">
+        <h3 style="margin:0;">Month</h3>
+        <select id="reportMonthSelect" style="padding:7px 10px;border:1px solid var(--line);border-radius:8px;">${monthOptions}</select>
+      </div>
+      <div class="stat-row">
+        <div class="stat"><div class="label">Total Collection</div><div class="value">${fmt(totalTotalCollection)}</div></div>
+        <div class="stat"><div class="label">Total Chit Paid</div><div class="value">${fmt(totalChitPaid)}</div></div>
+        <div class="stat"><div class="label">Net Closing</div><div class="value ${totalClosing<0?'neg':'pos'}">${fmt(totalClosing)}</div></div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Chit Group</th><th class="right">Opening</th><th class="right">Collection</th><th class="right">Pending Recv.</th><th class="right">Total Collection</th><th class="right">Chit Paid</th><th class="right">Closing</th></tr></thead>
+          <tbody>${groupRows.join('') || `<tr><td colspan="7" style="text-align:center;color:var(--ink-soft);padding:16px;">No chit group is active this month.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Payments in ${monthLabel(mk)}</h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Chit Group</th><th>Member</th><th>Ref By</th><th>Status</th><th class="right">Amount</th></tr></thead>
+          <tbody>${payHtml}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderReportChitWise(){
+  const cards = state.chits.map(c=>{
+    const rows = chitLedger(c);
+    const last = rows[rows.length-1];
+    const bodyRows = rows.map(r=>`
+      <tr>
+        <td>${r.idx}</td><td>${monthLabel(r.monthKey)}</td>
+        <td class="right num">${fmt(r.opening)}</td><td class="right num">${fmt(r.collection)}</td>
+        <td class="right num">${fmt(r.pendingReceived)}</td><td class="right num" style="font-weight:600;">${fmt(r.totalCollection)}</td>
+        <td class="right num">${fmt(r.chitPaid)}</td><td class="right num" style="font-weight:700;${r.closing<0?'color:var(--red);':''}">${fmt(r.closing)}</td>
+      </tr>`).join('');
+    return `
+      <div class="card">
+        <div class="toolbar">
+          <h3 style="margin:0;">${escapeHtml(c.name)}</h3>
+          <span style="flex:1;"></span>
+          <button class="btn ghost small" data-nav="chit" data-id="${c.id}">Open Group →</button>
+        </div>
+        <div class="sub" style="margin-bottom:10px;">Chit value ${fmt(c.chitValue)} · ${c.totalMembers} members · monthly ${fmt(monthlyAmount(c))} · current closing <b>${last?fmt(last.closing):'₹0'}</b></div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>#</th><th>Month</th><th class="right">Opening</th><th class="right">Collection</th><th class="right">Pending Recv.</th><th class="right">Total Collection</th><th class="right">Chit Paid</th><th class="right">Closing</th></tr></thead>
+            <tbody>${bodyRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }).join('');
+  return cards;
+}
+
+function renderReportPending(){
+  const items = [];
+  state.chits.forEach(c=>{
+    const mAmt = monthlyAmount(c);
+    c.members.forEach(m=>{
+      Object.keys(m.payments||{}).forEach(mk=>{
+        if(m.payments[mk]==='pending'){
+          items.push({group:c.name, name:personName(m.personId), refBy:personRefBy(m.personId), month:mk, amount:mAmt});
+        }
+      });
+    });
+  });
+  items.sort((a,b)=> a.month<b.month?-1:a.month>b.month?1: a.group.localeCompare(b.group));
+  const total = items.reduce((s,i)=>s+i.amount,0);
+  const rows = items.map(i=>`
+    <tr>
+      <td>${monthLabel(i.month)}</td>
+      <td>${escapeHtml(i.group)}</td>
+      <td>${escapeHtml(i.name)}</td>
+      <td>${escapeHtml(i.refBy||'')}</td>
+      <td class="right num" style="color:var(--red);font-weight:600;">${fmt(i.amount)}</td>
+    </tr>`).join('');
+  return `
+    <div class="card">
+      <div class="toolbar">
+        <h3 style="margin:0;">Pending / Unpaid Instalments</h3>
+        <span style="flex:1;"></span>
+        <span class="badge neg" style="font-size:13px;padding:5px 12px;">${items.length} due · ${fmt(total)}</span>
+        ${items.length ? '<button class="btn small" id="btnExportPending">Export CSV</button>' : ''}
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Month</th><th>Chit Group</th><th>Member</th><th>Ref By</th><th class="right">Amount Owed</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="5" style="text-align:center;color:var(--ink-soft);padding:20px;">Nothing pending — every marked instalment is settled.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderReportDistribution(){
+  const items = [];
+  const unassigned = [];
+  state.chits.forEach(c=>{
+    c.members.forEach(m=>{
+      (m.slots||[]).forEach(s=>{
+        if(s.takenChitNo){
+          const monthKey = addMonths(c.startMonth, Number(s.takenChitNo)-1);
+          items.push({group:c.name, chitNo:Number(s.takenChitNo), name:personName(m.personId), refBy:personRefBy(m.personId), month:monthKey, amount:Number(s.chitTakenAmount)||0});
+        } else if(s.chitTakenAmount) {
+          unassigned.push({group:c.name, name:personName(m.personId), amount:Number(s.chitTakenAmount)||0});
+        }
+      });
+    });
+  });
+  items.sort((a,b)=> a.group===b.group ? a.chitNo-b.chitNo : a.group.localeCompare(b.group));
+  const total = items.reduce((s,i)=>s+i.amount,0);
+  const rows = items.map(i=>`
+    <tr>
+      <td>${escapeHtml(i.group)}</td>
+      <td class="right num">#${i.chitNo}</td>
+      <td>${monthLabel(i.month)}</td>
+      <td>${escapeHtml(i.name)}</td>
+      <td>${escapeHtml(i.refBy||'')}</td>
+      <td class="right num">${fmt(i.amount)}</td>
+    </tr>`).join('');
+  const unassignedHtml = unassigned.length ? `
+    <div class="card">
+      <h3>Slots with an amount but no chit no. assigned yet</h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Chit Group</th><th>Member</th><th class="right">Amount</th></tr></thead>
+          <tbody>${unassigned.map(u=>`<tr><td>${escapeHtml(u.group)}</td><td>${escapeHtml(u.name)}</td><td class="right num">${fmt(u.amount)}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>` : '';
+  return `
+    <div class="card">
+      <div class="toolbar">
+        <h3 style="margin:0;">Chit Distribution — who won which chit slot, and when</h3>
+        <span style="flex:1;"></span>
+        <span class="badge" style="background:var(--gold-soft);color:var(--maroon-dark);font-size:13px;padding:5px 12px;">${items.length} slots · ${fmt(total)}</span>
+        ${items.length ? '<button class="btn small" id="btnExportDistribution">Export CSV</button>' : ''}
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Chit Group</th><th class="right">Chit No.</th><th>Payout Month</th><th>Member</th><th>Ref By</th><th class="right">Amount</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="6" style="text-align:center;color:var(--ink-soft);padding:20px;">No chit slots have been assigned yet.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+    ${unassignedHtml}
+  `;
+}
+
+function renderReportNonTaker(){
+  // People who contribute to at least one chit group but have not yet won any chit slot in it.
+  const rows = [];
+  state.chits.forEach(c=>{
+    c.members.forEach(m=>{
+      const hasSlot = (m.slots||[]).some(s=>s.takenChitNo);
+      if(!hasSlot){
+        rows.push({group:c.name, name:personName(m.personId), refBy:personRefBy(m.personId)});
+      }
+    });
+  });
+  rows.sort((a,b)=> a.group.localeCompare(b.group) || a.name.localeCompare(b.name));
+  const body = rows.map(r=>`
+    <tr><td>${escapeHtml(r.group)}</td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.refBy||'')}</td></tr>`).join('');
+  return `
+    <div class="card">
+      <div class="toolbar">
+        <h3 style="margin:0;">Members Who Haven't Taken a Chit Yet</h3>
+        <span style="flex:1;"></span>
+        <span class="badge" style="background:var(--gold-soft);color:var(--maroon-dark);font-size:13px;padding:5px 12px;">${rows.length}</span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Chit Group</th><th>Member</th><th>Ref By</th></tr></thead>
+          <tbody>${body || `<tr><td colspan="3" style="text-align:center;color:var(--ink-soft);padding:20px;">Everyone has taken a chit slot in every group.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function allMonthsUnion(){
+  if(state.chits.length===0) return [];
+  let minMonth=null, maxMonth=null;
+  state.chits.forEach(c=>{
+    const end = addMonths(c.startMonth, c.durationMonths-1);
+    if(!minMonth || c.startMonth<minMonth) minMonth=c.startMonth;
+    if(!maxMonth || end>maxMonth) maxMonth=end;
+  });
+  if(!minMonth) return [];
+  const span = monthDiff(minMonth,maxMonth)+1;
+  const months = [];
+  for(let i=0;i<span;i++) months.push(addMonths(minMonth,i));
+  return months;
+}
+
+function renderDashboard(){
+  if(state.chits.length===0){
+    return `<div class="topbar"><div><h2>Temple Dashboard</h2><div class="sub">Combined cash flow across every chit group</div></div></div>
+      <div class="empty-state"><div class="mark-big">&#3495;</div><p>No chit groups yet. Create one from the sidebar.</p></div>`;
+  }
+  const months = allMonthsUnion();
+
+  const perChitLedger = {};
+  state.chits.forEach(c=>{ perChitLedger[c.id] = chitLedger(c); });
+
+  const agg = months.map(mk=>{
+    let opening=0, collection=0, pendingRec=0, totalCollection=0, chitPaid=0, closing=0, any=false;
+    state.chits.forEach(c=>{
+      const rows = perChitLedger[c.id];
+      const row = rows.find(r=>r.monthKey===mk);
+      if(row){ any=true; opening+=row.opening; collection+=row.collection; pendingRec+=row.pendingReceived; totalCollection+=row.totalCollection; chitPaid+=row.chitPaid; closing+=row.closing; }
+    });
+    return {mk, opening, collection, pendingRec, totalCollection, chitPaid, closing, any};
+  }).filter(r=>r.any);
+
+  const latest = agg[agg.length-1];
+  const totalMembers = state.chits.reduce((s,c)=>s+c.members.length,0);
+  const totalPendingDues = state.chits.reduce((s,c)=>{
+    const rows = chitLedger(c);
+    return s + rows.reduce((s2,r)=>s2+r.outstanding,0);
+  },0);
+
+  const statCards = `
+    <div class="stat-row">
+      <div class="stat"><div class="label">Active Chit Groups</div><div class="value">${state.chits.length}</div></div>
+      <div class="stat"><div class="label">Total Members Enrolled</div><div class="value">${totalMembers}</div></div>
+      <div class="stat"><div class="label">Latest Closing Balance</div><div class="value ${latest&&latest.closing<0?'neg':'pos'}">${latest?fmt(latest.closing):'₹0'}</div></div>
+      <div class="stat"><div class="label">Outstanding Dues (unpaid)</div><div class="value ${totalPendingDues>0?'neg':''}">${fmt(totalPendingDues)}</div></div>
+    </div>`;
+
+  const rows = agg.map(r=>`
+    <tr>
+      <td>${monthLabel(r.mk)}</td>
+      <td class="right num">${fmt(r.opening)}</td>
+      <td class="right num">${fmt(r.collection)}</td>
+      <td class="right num">${fmt(r.pendingRec)}</td>
+      <td class="right num" style="font-weight:600;">${fmt(r.totalCollection)}</td>
+      <td class="right num">${fmt(r.chitPaid)}</td>
+      <td class="right num" style="font-weight:700;">${fmt(r.closing)}</td>
+    </tr>`).join('');
+
+  return `
+    <div class="topbar">
+      <div><h2>Temple Dashboard</h2><div class="sub">Combined cash flow across every chit group — mirrors the workbook's "Summary DB" tab</div></div>
+    </div>
+    ${statCards}
+    <div class="card">
+      <h3>All-Chit Monthly Ledger</h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th class="sticky-col">Month</th><th class="right">Opening Balance</th><th class="right">Chit Collection</th>
+            <th class="right">Pending Received</th><th class="right">Total Collection</th><th class="right">Chit Paid</th><th class="right">Closing Balance</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Per-Group Snapshot</h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Chit Group</th><th class="right">Value</th><th class="right">Members</th><th class="right">Monthly Amt</th><th class="right">Latest Closing</th></tr></thead>
+          <tbody>
+          ${state.chits.map(c=>{
+            const rows2 = chitLedger(c);
+            const last = rows2[rows2.length-1];
+            return `<tr>
+              <td><button class="btn ghost small" data-nav="chit" data-id="${c.id}">${escapeHtml(c.name)}</button></td>
+              <td class="right num">${fmt(c.chitValue)}</td>
+              <td class="right num">${c.members.length}/${c.totalMembers}</td>
+              <td class="right num">${fmt(monthlyAmount(c))}</td>
+              <td class="right num ${last&&last.closing<0?'neg':''}">${last?fmt(last.closing):'—'}</td>
+            </tr>`;
+          }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+/* ============================= CHIT GROUP VIEW ============================= */
+function renderChitView(chit){
+  const ledger = chitLedger(chit);
+  const mAmt = monthlyAmount(chit);
+  const last = ledger[ledger.length-1];
+  const totalOutstanding = ledger.reduce((s,r)=>s+r.outstanding,0);
+
+  const months = ledger.map(r=>r.monthKey);
+  const memberPersonIds = new Set(chit.members.map(m=>m.personId));
+  const availableToAdd = state.people.filter(p=>!memberPersonIds.has(p.id));
+
+  // Members grid
+  const headerMonths = months.map(mk=>`<th class="right">${monthLabel(mk)}</th>`).join('');
+  const peopleDatalist = `<datalist id="peopleList">${state.people.map(p=>`<option value="${escapeAttr(p.name)}">`).join('')}</datalist>`;
+  const memberRows = chit.members.map(m=>{
+    const cells = months.map((mk,i)=>{
+      const st = m.payments[mk] || '';
+      const dispMap = {paid:'X', pending:'!', late:'L', '':'·'};
+      const cls = st || 'future';
+      const lateFor = (m.lateFor||{})[mk];
+      const title = st==='late' && lateFor ? ` title="Paid late — settles ${monthLabel(lateFor)}'s due"` : '';
+      return `<td><div class="pay-cell ${cls}" data-cell="1" data-chit="${chit.id}" data-member="${m.id}" data-month="${mk}"${title}>${dispMap[st]||'·'}</div></td>`;
+    }).join('');
+    const pendingCount = months.filter(mk=>m.payments[mk]==='pending').length;
+    const slotsHtml = (m.slots||[]).map(s=>`
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:2px;">
+        <input class="cell-input num" style="width:34px;background:#F8F3E9;" type="number" placeholder="No"
+          data-field="slotNo" data-chit="${chit.id}" data-member="${m.id}" data-slot="${s.id}" value="${s.takenChitNo??''}"/>
+        <span style="color:var(--ink-soft);">→</span>
+        <input class="cell-input num" style="width:66px;background:#F8F3E9;" type="number" placeholder="₹"
+          data-field="slotAmt" data-chit="${chit.id}" data-member="${m.id}" data-slot="${s.id}" value="${s.chitTakenAmount??''}"/>
+        <button class="btn ghost small" style="padding:2px 6px;" data-del-slot="${s.id}" data-chit="${chit.id}" data-member="${m.id}" title="Remove slot">✕</button>
+      </div>`).join('');
+    return `<tr>
+      <td class="sticky-col" style="background:#fff;">
+        <div class="name-cell">
+          <b class="num">#${m.sno}</b>
+        </div>
+      </td>
+      <td><input class="cell-input" data-field="personRefBy" data-person="${m.personId}" value="${escapeAttr(personRefBy(m.personId))}" placeholder="Ref"/></td>
+      <td style="min-width:170px;"><input class="cell-input" list="peopleList" data-field="name" data-chit="${chit.id}" data-member="${m.id}" value="${escapeAttr(personName(m.personId))}" placeholder="Member name"/></td>
+      <td style="min-width:130px;">
+        ${slotsHtml}
+        <button class="btn ghost small" style="padding:2px 6px;" data-add-slot="1" data-chit="${chit.id}" data-member="${m.id}">+ chit no</button>
+      </td>
+      <td class="right num">${pendingCount>0?`<span class="badge neg">${pendingCount}</span>`:'0'}</td>
+      ${cells}
+      <td><button class="btn ghost small" data-del-member="${m.id}" data-chit="${chit.id}" title="Remove member">✕</button></td>
+    </tr>`;
+  }).join('');
+
+  const ledgerRows = ledger.map(r=>`
+    <tr>
+      <td>${r.idx}</td>
+      <td>${monthLabel(r.monthKey)}</td>
+      <td class="right num">${fmt(r.opening)}</td>
+      <td class="right num">${fmt(r.collection)}</td>
+      <td class="right num">${fmt(r.pendingReceived)}</td>
+      <td class="right num" style="font-weight:600;">${fmt(r.totalCollection)}</td>
+      <td class="right num">
+        <input class="cell-input num right" style="width:82px;text-align:right;" type="number"
+          data-field="payout" data-chit="${chit.id}" data-month="${r.monthKey}" value="${chit.payoutOverride[r.monthKey] ?? r.chitPaid}"/>
+      </td>
+      <td class="right num" style="font-weight:700;${r.closing<0?'color:var(--red);':''}">${fmt(r.closing)}</td>
+    </tr>`).join('');
+
+  const scheduleEntries = Object.keys(chit.distributionSchedule||{}).map(Number).sort((a,b)=>a-b);
+  const scheduleHtml = scheduleEntries.length ? `
+    <div class="table-scroll">
+      <table><thead><tr><th>Chit No.</th><th class="right">Scheduled Amount</th></tr></thead>
+      <tbody>${scheduleEntries.map(no=>`<tr><td>#${no}</td><td class="right num">${fmt(chit.distributionSchedule[no])}</td></tr>`).join('')}</tbody></table>
+    </div>` : `<p style="color:var(--ink-soft);font-size:12.5px;">No distribution schedule set — chit slot amounts will need to be entered per member instead.</p>`;
+
+  return `
+    <div class="topbar">
+      <div>
+        <h2>${escapeHtml(chit.name)} <button class="btn ghost small" data-edit-chit="${chit.id}">Edit</button></h2>
+        <div class="sub">Chit value ${fmt(chit.chitValue)} · ${chit.totalMembers} members · monthly instalment ${fmt(mAmt)} · starts ${monthLabel(chit.startMonth)}</div>
+      </div>
+      <button class="btn danger" data-del-chit="${chit.id}">Delete Group</button>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat"><div class="label">Monthly Instalment</div><div class="value">${fmt(mAmt)}</div></div>
+      <div class="stat"><div class="label">Members Enrolled</div><div class="value">${chit.members.length}/${chit.totalMembers}</div></div>
+      <div class="stat"><div class="label">Current Closing Balance</div><div class="value ${last&&last.closing<0?'neg':'pos'}">${last?fmt(last.closing):'₹0'}</div></div>
+      <div class="stat"><div class="label">Outstanding Dues</div><div class="value ${totalOutstanding>0?'neg':''}">${fmt(totalOutstanding)}</div></div>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <h3 style="margin:0;">Chit Distribution Schedule</h3>
+        <span style="flex:1;"></span>
+        <button class="btn ghost small" data-edit-schedule="${chit.id}">Edit Schedule</button>
+      </div>
+      ${scheduleHtml}
+      <div class="legend"><span style="color:var(--ink-soft);">Set once here, and it auto-fills a member's chit slot amount when you type a matching chit no. below.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <h3 style="margin:0;">Members &amp; Monthly Collection</h3>
+        <span style="flex:1;"></span>
+        <button class="btn ghost small" id="btnAddExistingMember" ${availableToAdd.length===0?'disabled':''}>+ Add Existing Member</button>
+        <button class="btn primary small" id="btnAddMember">+ New Member</button>
+      </div>
+      <div class="table-scroll">
+        ${peopleDatalist}
+        <table>
+          <thead><tr>
+            <th class="sticky-col">S/No</th><th>Ref By</th><th>Name</th><th>Chit Slot(s)</th><th class="right">Unpaid</th>
+            ${headerMonths}<th></th>
+          </tr></thead>
+          <tbody>${memberRows || `<tr><td colspan="99" style="text-align:center;color:var(--ink-soft);padding:20px;">No members yet — add one to start tracking.</td></tr>`}</tbody>
+        </table>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--green-soft);border:1px solid #c7e0c4;"></i>Paid on time (X)</span>
+        <span><i style="background:var(--red-soft);border:1px solid #edc9be;"></i>Pending / unpaid (!)</span>
+        <span><i style="background:var(--blue-soft);border:1px solid #c3dde8;"></i>Old due collected late (L)</span>
+        <span><i style="background:transparent;border:1px dashed #CBBFAF;"></i>Not due yet</span>
+        <span style="color:var(--ink-soft);">Click a cell to cycle status — marking "Late" will ask which month's due it settles · Ref By is shared per person across every group · type a name that already exists to link the same person · "+ chit no" lets one member hold more than one number in the same group</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Group Ledger (auto-calculated)</h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>#</th><th>Month</th><th class="right">Opening</th><th class="right">Chit Collection</th>
+            <th class="right">Pending Received</th><th class="right">Total Collection</th><th class="right">Chit Paid</th><th class="right">Closing</th>
+          </tr></thead>
+          <tbody>${ledgerRows}</tbody>
+        </table>
+      </div>
+      <div class="legend">
+        <span>Formulas: <b>Collection</b> = paid members × monthly instalment &nbsp;·&nbsp; <b>Closing</b> = Opening + Total Collection − Chit Paid &nbsp;·&nbsp; next month's Opening = this Closing</span>
+      </div>
+    </div>
+  `;
+}
+
+/* ============================= EVENTS ============================= */
+function attachEvents(){
+  document.getElementById('btnMenu')?.addEventListener('click', ()=>{ ui.sidebarOpen=!ui.sidebarOpen; render(); });
+  document.getElementById('sidebarScrim')?.addEventListener('click', ()=>{ ui.sidebarOpen=false; render(); });
+  document.getElementById('btnNewChit')?.addEventListener('click', ()=> openModal('newChit'));
+  document.getElementById('btnAddMember')?.addEventListener('click', ()=> addMember(ui.chitId));
+  document.getElementById('btnAddExistingMember')?.addEventListener('click', ()=> openModal('addExisting', ui.chitId));
+
+  document.querySelectorAll('[data-nav]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      ui.view = el.dataset.nav; ui.chitId = el.dataset.id || null; ui.sidebarOpen=false; render();
+    });
+  });
+
+  document.querySelectorAll('[data-cell]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      cyclePayment(el.dataset.chit, el.dataset.member, el.dataset.month);
+    });
+  });
+
+  document.querySelectorAll('[data-field]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      const {field, chit:chitId, member:memberId, month, slot:slotId, person:personId} = el.dataset;
+
+      if(field==='personRefBy'){
+        const p = state.people.find(x=>x.id===personId);
+        if(p){ p.refBy = el.value; scheduleSave(); }
+        return;
+      }
+
+      const chit = state.chits.find(c=>c.id===chitId);
+      if(!chit) return;
+      if(field==='payout'){
+        chit.payoutOverride[month] = el.value;
+        scheduleSave();
+        return;
+      }
+      const m = chit.members.find(x=>x.id===memberId);
+      if(!m) return;
+      if(field==='name'){
+        setMemberName(m, el.value);
+        scheduleSave();
+      } else if(field==='slotNo' || field==='slotAmt'){
+        const s = (m.slots||[]).find(x=>x.id===slotId);
+        if(!s) return;
+        const key = field==='slotNo' ? 'takenChitNo' : 'chitTakenAmount';
+        s[key] = el.value===''?null:Number(el.value);
+        if(field==='slotNo' && (s.chitTakenAmount===null || s.chitTakenAmount===undefined)){
+          const sched = scheduledAmount(chit, s.takenChitNo);
+          if(sched!==null){ s.chitTakenAmount = sched; }
+        }
+        scheduleSave(); render();
+      } else {
+        m[field] = el.value;
+        scheduleSave();
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-add-slot]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const chit = state.chits.find(c=>c.id===el.dataset.chit);
+      const m = chit && chit.members.find(x=>x.id===el.dataset.member);
+      if(!m) return;
+      if(!Array.isArray(m.slots)) m.slots = [];
+      m.slots.push({id:uid('slot'), takenChitNo:null, chitTakenAmount:null});
+      scheduleSave(); render();
+    });
+  });
+
+  document.querySelectorAll('[data-del-slot]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const chit = state.chits.find(c=>c.id===el.dataset.chit);
+      const m = chit && chit.members.find(x=>x.id===el.dataset.member);
+      if(!m) return;
+      m.slots = (m.slots||[]).filter(s=>s.id!==el.dataset.delSlot);
+      scheduleSave(); render();
+    });
+  });
+
+  document.querySelectorAll('[data-report-tab]').forEach(el=>{
+    el.addEventListener('click', ()=>{ ui.reportTab = el.dataset.reportTab; render(); });
+  });
+  document.getElementById('reportMonthSelect')?.addEventListener('change', (e)=>{
+    ui.reportMonth = e.target.value; render();
+  });
+  document.getElementById('btnExportPending')?.addEventListener('click', ()=>{
+    const items = [];
+    state.chits.forEach(c=>{
+      const mAmt = monthlyAmount(c);
+      c.members.forEach(m=>{
+        Object.keys(m.payments||{}).forEach(mk=>{
+          if(m.payments[mk]==='pending') items.push([monthLabel(mk), c.name, personName(m.personId), personRefBy(m.personId), mAmt]);
+        });
+      });
+    });
+    downloadCSV('pending-list', ['Month','Chit Group','Member','Ref By','Amount Owed'], items);
+  });
+  document.getElementById('btnExportDistribution')?.addEventListener('click', ()=>{
+    const items = [];
+    state.chits.forEach(c=>{
+      c.members.forEach(m=>{
+        (m.slots||[]).forEach(s=>{
+          if(s.takenChitNo){
+            const mk = addMonths(c.startMonth, Number(s.takenChitNo)-1);
+            items.push([c.name, s.takenChitNo, monthLabel(mk), personName(m.personId), personRefBy(m.personId), Number(s.chitTakenAmount)||0]);
+          }
+        });
+      });
+    });
+    downloadCSV('chit-distribution', ['Chit Group','Chit No','Payout Month','Member','Ref By','Amount'], items);
+  });
+
+  document.getElementById('btnExport')?.addEventListener('click', exportBackup);
+  document.getElementById('btnSignOut')?.addEventListener('click', ()=> signOut(auth));
+  document.getElementById('btnImportTrigger')?.addEventListener('click', ()=> document.getElementById('fileImport')?.click());
+  document.getElementById('fileImport')?.addEventListener('change', importBackup);
+
+  document.querySelectorAll('[data-del-member]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const chit = state.chits.find(c=>c.id===el.dataset.chit);
+      if(!chit) return;
+      if(!confirm('Remove this member?')) return;
+      chit.members = chit.members.filter(m=>m.id!==el.dataset.delMember);
+      scheduleSave(); render();
+    });
+  });
+
+  document.querySelectorAll('[data-del-chit]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      if(!confirm('Delete this entire chit group? This cannot be undone.')) return;
+      state.chits = state.chits.filter(c=>c.id!==el.dataset.delChit);
+      ui.view='dashboard'; ui.chitId=null;
+      scheduleSave(); render();
+    });
+  });
+
+  document.querySelectorAll('[data-edit-chit]').forEach(el=>{
+    el.addEventListener('click', ()=> openModal('editChit', el.dataset.editChit));
+  });
+
+  document.querySelectorAll('[data-edit-schedule]').forEach(el=>{
+    el.addEventListener('click', ()=> openModal('editSchedule', el.dataset.editSchedule));
+  });
+}
+
+function cyclePayment(chitId, memberId, monthKey){
+  const chit = state.chits.find(c=>c.id===chitId);
+  const m = chit.members.find(x=>x.id===memberId);
+  const order = ['', 'paid', 'pending', 'late'];
+  const cur = m.payments[monthKey] || '';
+  const next = order[(order.indexOf(cur)+1) % order.length];
+  if(next==='late'){
+    openModal('lateEntry', chitId, {memberId, monthKey});
+    return;
+  }
+  if(next==='') { delete m.payments[monthKey]; if(m.lateFor) delete m.lateFor[monthKey]; }
+  else m.payments[monthKey] = next;
+  scheduleSave(); render();
+}
+
+function setMemberName(m, newName){
+  newName = (newName||'').trim();
+  if(!newName) newName = 'Unnamed';
+  const existing = state.people.find(p=>p.name.toLowerCase()===newName.toLowerCase());
+  if(existing){
+    m.personId = existing.id;
+    return;
+  }
+  const current = state.people.find(p=>p.id===m.personId);
+  if(current){
+    current.name = newName;
+  } else {
+    m.personId = getOrCreatePerson(newName);
+  }
+}
+
+function addMember(chitId){
+  const chit = state.chits.find(c=>c.id===chitId);
+  if(!chit) return;
+  const sno = chit.members.length ? Math.max(...chit.members.map(m=>m.sno))+1 : 1;
+  const personId = getOrCreatePerson('New Member '+sno);
+  chit.members.push({id:uid('m'), sno, personId, payments:{}, slots:[], lateFor:{}});
+  scheduleSave(); render();
+}
+
+function addExistingMembersToChit(chitId, personIds){
+  const chit = state.chits.find(c=>c.id===chitId);
+  if(!chit) return;
+  let sno = chit.members.length ? Math.max(...chit.members.map(m=>m.sno)) : 0;
+  personIds.forEach(pid=>{
+    if(chit.members.some(m=>m.personId===pid)) return; // already in this group
+    sno += 1;
+    chit.members.push({id:uid('m'), sno, personId:pid, payments:{}, slots:[], lateFor:{}});
+  });
+  scheduleSave(); render();
+}
+
+/* ============================= BACKUP / RESTORE ============================= */
+function downloadCSV(baseName, headers, rows){
+  const esc = v => {
+    const s = String(v??'');
+    return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  };
+  const lines = [headers.map(esc).join(','), ...rows.map(r=>r.map(esc).join(','))];
+  const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,10);
+  a.href = url; a.download = `${baseName}-${stamp}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+
+function exportBackup(){
+  const payload = JSON.stringify(state, null, 2);
+  const blob = new Blob([payload], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `chit-ledger-backup-${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+
+function importBackup(e){
+  const file = e.target.files && e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const parsed = JSON.parse(reader.result);
+      if(!parsed || !Array.isArray(parsed.chits)) throw new Error('Not a valid backup file');
+      state = parsed;
+      migrate();
+      scheduleSave();
+      ui.view='dashboard'; ui.chitId=null; ui.sidebarOpen=false;
+      render();
+      alert('Backup restored.');
+    }catch(err){
+      alert('Could not read that file as a chit ledger backup: '+err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+/* ============================= MODALS ============================= */
+function openModal(type, chitId, extra){ ui.modal = {type, chitId, ...(extra||{})}; render(); }
+function closeModal(){ ui.modal = null; render(); }
+
+function renderModal(){
+  const container = document.createElement('div');
+  container.className = 'modal-backdrop';
+  container.id = 'modalBackdrop';
+
+  if(ui.modal.type==='newChit'){
+    container.innerHTML = `
+      <div class="modal">
+        <h3>New Chit Group</h3>
+        <div class="field"><label>Group Name</label><input id="fName" placeholder="e.g. 2 Lakh Chit No-6"/></div>
+        <div class="field-row">
+          <div class="field"><label>Chit Value (₹)</label><input id="fValue" type="number" placeholder="200000"/></div>
+          <div class="field"><label>Total Members</label><input id="fMembers" type="number" placeholder="20"/></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Start Month</label><input id="fStart" type="month" value="${currentMonthKey()}"/></div>
+          <div class="field"><label>Duration (months)</label><input id="fDuration" type="number" placeholder="20"/></div>
+        </div>
+        <div class="field"><label>Opening Balance Carried Forward (₹)</label><input id="fOpening" type="number" value="0"/></div>
+        <div class="field">
+          <label>Chit Distribution Schedule (optional)</label>
+          <textarea id="fSchedule" rows="4" placeholder="One per line — chit no: amount&#10;1: 22000&#10;2: 23000&#10;3: 24000" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-family:'JetBrains Mono',monospace;"></textarea>
+          <p style="font-size:11px;color:var(--ink-soft);margin:4px 0 0;">Sets the payout amount for each chit no. up front — it auto-fills a member's slot amount later when you assign that number to them.</p>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" id="mCancel">Cancel</button>
+          <button class="btn primary" id="mSave">Create Group</button>
+        </div>
+      </div>`;
+    document.body.appendChild(container);
+    document.getElementById('mCancel').onclick = closeModal;
+    document.getElementById('mSave').onclick = ()=>{
+      const name = document.getElementById('fName').value.trim() || 'Untitled Chit';
+      const value = Number(document.getElementById('fValue').value)||0;
+      const members = Number(document.getElementById('fMembers').value)||1;
+      const start = document.getElementById('fStart').value || currentMonthKey();
+      const duration = Number(document.getElementById('fDuration').value)||members;
+      const opening = Number(document.getElementById('fOpening').value)||0;
+      const distributionSchedule = parseScheduleText(document.getElementById('fSchedule').value);
+      const id = uid('chit');
+      state.chits.push({id, name, chitValue:value, totalMembers:members, durationMonths:duration, startMonth:start, openingCarry:opening, members:[], payoutOverride:{}, distributionSchedule});
+      scheduleSave();
+      ui.modal=null; ui.view='chit'; ui.chitId=id;
+      render();
+    };
+  }
+
+  if(ui.modal.type==='editChit'){
+    const chit = state.chits.find(c=>c.id===ui.modal.chitId);
+    container.innerHTML = `
+      <div class="modal">
+        <h3>Edit Chit Group</h3>
+        <div class="field"><label>Group Name</label><input id="fName" value="${escapeAttr(chit.name)}"/></div>
+        <div class="field-row">
+          <div class="field"><label>Chit Value (₹)</label><input id="fValue" type="number" value="${chit.chitValue}"/></div>
+          <div class="field"><label>Total Members</label><input id="fMembers" type="number" value="${chit.totalMembers}"/></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Start Month</label><input id="fStart" type="month" value="${chit.startMonth}"/></div>
+          <div class="field"><label>Duration (months)</label><input id="fDuration" type="number" value="${chit.durationMonths}"/></div>
+        </div>
+        <div class="field"><label>Opening Balance Carried Forward (₹)</label><input id="fOpening" type="number" value="${chit.openingCarry}"/></div>
+        <div class="modal-actions">
+          <button class="btn" id="mCancel">Cancel</button>
+          <button class="btn primary" id="mSave">Save Changes</button>
+        </div>
+      </div>`;
+    document.body.appendChild(container);
+    document.getElementById('mCancel').onclick = closeModal;
+    document.getElementById('mSave').onclick = ()=>{
+      chit.name = document.getElementById('fName').value.trim() || chit.name;
+      chit.chitValue = Number(document.getElementById('fValue').value)||chit.chitValue;
+      chit.totalMembers = Number(document.getElementById('fMembers').value)||chit.totalMembers;
+      chit.startMonth = document.getElementById('fStart').value || chit.startMonth;
+      chit.durationMonths = Number(document.getElementById('fDuration').value)||chit.durationMonths;
+      chit.openingCarry = Number(document.getElementById('fOpening').value)||0;
+      scheduleSave();
+      ui.modal=null;
+      render();
+    };
+  }
+
+  if(ui.modal.type==='editSchedule'){
+    const chit = state.chits.find(c=>c.id===ui.modal.chitId);
+    container.innerHTML = `
+      <div class="modal">
+        <h3>Chit Distribution Schedule</h3>
+        <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">${escapeHtml(chit.name)}</p>
+        <div class="field">
+          <label>One per line — chit no: amount</label>
+          <textarea id="fSchedule" rows="8" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-family:'JetBrains Mono',monospace;">${escapeHtml(scheduleToText(chit.distributionSchedule))}</textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" id="mCancel">Cancel</button>
+          <button class="btn primary" id="mSave">Save Schedule</button>
+        </div>
+      </div>`;
+    document.body.appendChild(container);
+    document.getElementById('mCancel').onclick = closeModal;
+    document.getElementById('mSave').onclick = ()=>{
+      chit.distributionSchedule = parseScheduleText(document.getElementById('fSchedule').value);
+      // Backfill any slot that already has a chit no. but no amount yet.
+      chit.members.forEach(m=>{
+        (m.slots||[]).forEach(s=>{
+          if(s.takenChitNo && (s.chitTakenAmount===null || s.chitTakenAmount===undefined)){
+            const sched = scheduledAmount(chit, s.takenChitNo);
+            if(sched!==null) s.chitTakenAmount = sched;
+          }
+        });
+      });
+      scheduleSave();
+      ui.modal=null;
+      render();
+    };
+  }
+
+  if(ui.modal.type==='addExisting'){
+    const chit = state.chits.find(c=>c.id===ui.modal.chitId);
+    const memberPersonIds = new Set(chit.members.map(m=>m.personId));
+    const available = state.people.filter(p=>!memberPersonIds.has(p.id));
+    const rows = available.map(p=>`
+      <label style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid var(--line);font-size:13px;">
+        <input type="checkbox" value="${p.id}" class="existingMemberCheck"/> ${escapeHtml(p.name)}
+      </label>`).join('');
+    container.innerHTML = `
+      <div class="modal">
+        <h3>Add Existing Members</h3>
+        <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">Pick anyone already in your People list to add them to "${escapeHtml(chit.name)}" — no retyping needed.</p>
+        <div style="max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:0 8px;margin-bottom:6px;">
+          ${rows || `<p style="color:var(--ink-soft);font-size:12.5px;padding:10px 0;">Everyone in your People list is already in this group.</p>`}
+        </div>
+        <div class="modal-actions">
+          <button class="btn" id="mCancel">Cancel</button>
+          <button class="btn primary" id="mSave" ${available.length===0?'disabled':''}>Add Selected</button>
+        </div>
+      </div>`;
+    document.body.appendChild(container);
+    document.getElementById('mCancel').onclick = closeModal;
+    document.getElementById('mSave').onclick = ()=>{
+      const ids = Array.from(document.querySelectorAll('.existingMemberCheck:checked')).map(el=>el.value);
+      if(ids.length) addExistingMembersToChit(chit.id, ids);
+      ui.modal=null;
+      render();
+    };
+  }
+
+  if(ui.modal.type==='lateEntry'){
+    const chit = state.chits.find(c=>c.id===ui.modal.chitId);
+    const m = chit.members.find(x=>x.id===ui.modal.memberId);
+    const monthKey = ui.modal.monthKey;
+    container.innerHTML = `
+      <div class="modal">
+        <h3>Late Payment</h3>
+        <p style="font-size:12.5px;color:var(--ink-soft);margin-top:-6px;">
+          ${escapeHtml(personName(m.personId))} is paying <b>${monthLabel(monthKey)}</b>'s collection late. Which month's due does this settle?
+        </p>
+        <div class="field"><label>Original Due Month</label><input id="fForMonth" type="month" value="${monthKey}"/></div>
+        <div class="modal-actions">
+          <button class="btn" id="mCancel">Cancel</button>
+          <button class="btn primary" id="mSave">Mark as Late-Paid</button>
+        </div>
+      </div>`;
+    document.body.appendChild(container);
+    document.getElementById('mCancel').onclick = closeModal;
+    document.getElementById('mSave').onclick = ()=>{
+      const forMonth = document.getElementById('fForMonth').value || monthKey;
+      m.payments[monthKey] = 'late';
+      if(!m.lateFor) m.lateFor = {};
+      m.lateFor[monthKey] = forMonth;
+      // The original due is now settled — clear it if it was still marked pending.
+      if(m.payments[forMonth]==='pending') delete m.payments[forMonth];
+      scheduleSave();
+      ui.modal=null;
+      render();
+    };
+  }
+
+  container.addEventListener('click', (e)=>{ if(e.target===container) closeModal(); });
+  document.body.appendChild(container);
+}
+
+/* ============================= UTIL ============================= */
+function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeAttr(s){ return escapeHtml(s); }
+
+/* ============================= INIT ============================= */
+function init(){
+  render(); // shows setup/connecting screen immediately
+  if(!FIREBASE_CONFIGURED) return;
+
+  onAuthStateChanged(auth, (user)=>{
+    authLoading = false;
+    if(user){
+      currentUser = user;
+      subscribeToCloudData();
+    } else {
+      currentUser = null;
+      state = null;
+      if(unsubscribeSnapshot){ unsubscribeSnapshot(); unsubscribeSnapshot = null; }
+    }
+    render();
+  });
+}
+init();
+
+/* ============================= PWA: SERVICE WORKER ============================= */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('service-worker.js').catch(e=>console.warn('SW registration failed:', e));
+  });
+}
+</script>
+</body>
+</html>
