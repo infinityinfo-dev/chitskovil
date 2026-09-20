@@ -181,8 +181,9 @@
   }
   .mobile-topbar .title{font-family:'Fraunces',serif;font-weight:600;font-size:15px;}
   .mobile-quicknav{
-    display:none;gap:8px;overflow-x:auto;padding:9px 10px;background:#F1E2BE;
-    position:sticky;top:52px;z-index:44;-webkit-overflow-scrolling:touch;
+    display:none;gap:8px;overflow-x:auto;overflow-y:hidden;padding:9px 10px;background:#F1E2BE;
+    position:fixed;top:52px;left:0;right:0;height:52px;box-sizing:border-box;
+    z-index:44;-webkit-overflow-scrolling:touch;align-items:center;
   }
   .mobile-quicknav button{
     flex:0 0 auto;padding:8px 14px;border-radius:20px;border:1px solid var(--line);
@@ -191,7 +192,7 @@
   .mobile-quicknav button.active{background:var(--maroon);color:#fff;border-color:var(--maroon);}
   @media (max-width:800px){
     .mobile-quicknav{display:flex;}
-    .main{padding-top:112px;}
+    .main{padding-top:116px;}
   }
 </style>
 </head>
