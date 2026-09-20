@@ -180,6 +180,19 @@
     border-radius:8px;padding:8px 12px;font-size:18px;line-height:1;
   }
   .mobile-topbar .title{font-family:'Fraunces',serif;font-weight:600;font-size:15px;}
+  .mobile-quicknav{
+    display:none;gap:8px;overflow-x:auto;padding:9px 10px;background:#F1E2BE;
+    position:sticky;top:52px;z-index:44;-webkit-overflow-scrolling:touch;
+  }
+  .mobile-quicknav button{
+    flex:0 0 auto;padding:8px 14px;border-radius:20px;border:1px solid var(--line);
+    background:#fff;font-size:12.5px;font-weight:600;white-space:nowrap;color:var(--ink);
+  }
+  .mobile-quicknav button.active{background:var(--maroon);color:#fff;border-color:var(--maroon);}
+  @media (max-width:800px){
+    .mobile-quicknav{display:flex;}
+    .main{padding-top:112px;}
+  }
 </style>
 </head>
 <body>
@@ -223,7 +236,7 @@ if(FIREBASE_CONFIGURED){
 
 /* ============================= STATE ============================= */
 let state = null;
-let ui = { view:'dashboard', chitId:null, modal:null, sidebarOpen:false, reportTab:'month', reportMonth:null };
+let ui = { view:'dashboard', chitId:null, modal:null, sidebarOpen:false, reportTab:'month', reportMonth:null, dashboardExpanded:false };
 let saveTimer = null;
 
 function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2,9); }
@@ -408,10 +421,16 @@ function parseScheduleText(text){
   });
   return schedule;
 }
-function scheduleToText(schedule){
-  if(!schedule) return '';
-  return Object.keys(schedule).map(Number).sort((a,b)=>a-b)
-    .map(no=>`${no}: ${schedule[no]}`).join('\n');
+function scheduleToText(schedule, totalMembers){
+  schedule = schedule || {};
+  const known = Object.keys(schedule).map(Number).filter(n=>!isNaN(n));
+  const maxNo = Math.max(Number(totalMembers)||0, ...known, 0);
+  if(maxNo===0) return '';
+  const lines = [];
+  for(let i=1;i<=maxNo;i++){
+    lines.push(`${i}: ${schedule[i]!==undefined ? schedule[i] : ''}`);
+  }
+  return lines.join('\n');
 }
 function chitLedger(chit){
   const rows = [];
@@ -464,6 +483,7 @@ function render(){
       <button id="btnMenu" aria-label="Menu">&#9776;</button>
       <span class="title">Karupparayan Chit Ledger</span>
     </div>
+    <div class="mobile-quicknav">${renderMobileQuickNav()}</div>
     <div class="sidebar-scrim ${ui.sidebarOpen?'open':''}" id="sidebarScrim"></div>
     ${cloudOk ? '' : `<div id="storageBanner" style="position:sticky;top:0;z-index:30;background:#F1E2BE;color:#6E2028;padding:8px 16px;font-size:12.5px;text-align:center;">
       You're offline — changes are queued and will sync once your connection is back.
@@ -525,6 +545,21 @@ function friendlyAuthError(e){
   if(code.includes('too-many-requests')) return 'Too many attempts — wait a moment and try again.';
   if(code.includes('network-request-failed')) return 'No internet connection.';
   return 'Could not sign in: ' + ((e && e.message) || 'unknown error');
+}
+
+function renderMobileQuickNav(){
+  // Always-visible navigation strip for mobile — no toggle/click-to-open required,
+  // so it works even if the hamburger menu doesn't for any reason.
+  let items = `
+    <button class="${ui.view==='dashboard'?'active':''}" data-nav="dashboard">Dashboard</button>
+    <button class="${ui.view==='reports'?'active':''}" data-nav="reports">Reports</button>
+    <button class="${ui.view==='people'?'active':''}" data-nav="people">People</button>
+  `;
+  state.chits.forEach(c=>{
+    items += `<button class="${ui.view==='chit'&&ui.chitId===c.id?'active':''}" data-nav="chit" data-id="${c.id}">${escapeHtml(c.name)}</button>`;
+  });
+  items += `<button id="btnNewChitQuick">+ New Chit</button>`;
+  return items;
 }
 
 function renderSidebar(){
@@ -931,7 +966,10 @@ function renderDashboard(){
       <div class="stat"><div class="label">Outstanding Dues (unpaid)</div><div class="value ${totalPendingDues>0?'neg':''}">${fmt(totalPendingDues)}</div></div>
     </div>`;
 
-  const rows = agg.map(r=>`
+  const recentWindow = [addMonths(currentMonthKey(),-2), addMonths(currentMonthKey(),-1), currentMonthKey()];
+  const visibleAgg = ui.dashboardExpanded ? agg : agg.filter(r=>recentWindow.includes(r.mk));
+
+  const rows = visibleAgg.map(r=>`
     <tr>
       <td>${monthLabel(r.mk)}</td>
       <td class="right num">${fmt(r.opening)}</td>
@@ -948,7 +986,11 @@ function renderDashboard(){
     </div>
     ${statCards}
     <div class="card">
-      <h3>All-Chit Monthly Ledger</h3>
+      <div class="toolbar">
+        <h3 style="margin:0;">${ui.dashboardExpanded ? 'All-Chit Monthly Ledger — full history' : 'All-Chit Monthly Ledger — last 3 months'}</h3>
+        <span style="flex:1;"></span>
+        <button class="btn ghost small" id="btnToggleDashboardHistory">${ui.dashboardExpanded ? 'Show Last 3 Months' : 'Show Full History'}</button>
+      </div>
       <div class="table-scroll">
         <table>
           <thead><tr>
@@ -958,6 +1000,7 @@ function renderDashboard(){
           <tbody>${rows}</tbody>
         </table>
       </div>
+      <div class="legend"><span style="color:var(--ink-soft);">Looking for a specific month? Check the Reports page → Month-wise, which covers every month with a picker.</span></div>
     </div>
     <div class="card">
       <h3>Per-Group Snapshot</h3>
@@ -1131,6 +1174,8 @@ function attachEvents(){
   document.getElementById('btnMenu')?.addEventListener('click', ()=>{ ui.sidebarOpen=!ui.sidebarOpen; render(); });
   document.getElementById('sidebarScrim')?.addEventListener('click', ()=>{ ui.sidebarOpen=false; render(); });
   document.getElementById('btnNewChit')?.addEventListener('click', ()=> openModal('newChit'));
+  document.getElementById('btnToggleDashboardHistory')?.addEventListener('click', ()=>{ ui.dashboardExpanded = !ui.dashboardExpanded; render(); });
+  document.getElementById('btnNewChitQuick')?.addEventListener('click', ()=> openModal('newChit'));
   document.getElementById('btnAddMember')?.addEventListener('click', ()=> addMember(ui.chitId));
   document.getElementById('btnAddExistingMember')?.addEventListener('click', ()=> openModal('addExisting', ui.chitId));
 
@@ -1411,6 +1456,20 @@ function renderModal(){
       </div>`;
     document.body.appendChild(container);
     document.getElementById('mCancel').onclick = closeModal;
+    // Auto-fill the schedule textarea with numbered lines (1, 2, 3...) as soon as
+    // Total Members is typed, so the admin only has to fill in amounts. Only
+    // touches the textarea while it's still empty or still matches an earlier
+    // auto-generated template, so it never clobbers amounts already typed in.
+    let lastAutoTemplate = '';
+    document.getElementById('fMembers').addEventListener('input', (e)=>{
+      const n = Number(e.target.value)||0;
+      const schEl = document.getElementById('fSchedule');
+      if(schEl.value.trim()==='' || schEl.value===lastAutoTemplate){
+        const template = n>0 ? Array.from({length:n},(_,i)=>`${i+1}: `).join('\n') : '';
+        schEl.value = template;
+        lastAutoTemplate = template;
+      }
+    });
     document.getElementById('mSave').onclick = ()=>{
       const name = document.getElementById('fName').value.trim() || 'Untitled Chit';
       const value = Number(document.getElementById('fValue').value)||0;
@@ -1470,7 +1529,7 @@ function renderModal(){
         <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">${escapeHtml(chit.name)}</p>
         <div class="field">
           <label>One per line — chit no: amount</label>
-          <textarea id="fSchedule" rows="8" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-family:'JetBrains Mono',monospace;">${escapeHtml(scheduleToText(chit.distributionSchedule))}</textarea>
+          <textarea id="fSchedule" rows="8" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-family:'JetBrains Mono',monospace;">${escapeHtml(scheduleToText(chit.distributionSchedule, chit.totalMembers))}</textarea>
         </div>
         <div class="modal-actions">
           <button class="btn" id="mCancel">Cancel</button>
