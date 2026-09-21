@@ -263,7 +263,7 @@ function getOrCreatePerson(name){
   let existing = state.people.find(p=>p.name.toLowerCase()===name.toLowerCase());
   if(existing) return existing.id;
   const id = uid('person');
-  state.people.push({id, name, refBy:''});
+  state.people.push({id, name, refBy:'', portalEmail:''});
   return id;
 }
 function personName(id){
@@ -273,6 +273,10 @@ function personName(id){
 function personRefBy(id){
   const p = state.people.find(p=>p.id===id);
   return p ? (p.refBy||'') : '';
+}
+function findPersonByPortalEmail(email){
+  if(!email) return null;
+  return state.people.find(p=>p.portalEmail && p.portalEmail.toLowerCase()===email.toLowerCase()) || null;
 }
 
 /* ============================= DATE HELPERS ============================= */
@@ -346,7 +350,10 @@ async function persist(){
 }
 function migrate(){
   if(!Array.isArray(state.people)) state.people = [];
-  state.people.forEach(p=>{ if(p.refBy===undefined) p.refBy=''; });
+  state.people.forEach(p=>{
+    if(p.refBy===undefined) p.refBy='';
+    if(p.portalEmail===undefined) p.portalEmail='';
+  });
   (state.chits||[]).forEach(c=>{
     if(!c.payoutOverride) c.payoutOverride = {};
     if(!c.distributionSchedule) c.distributionSchedule = {};
@@ -422,10 +429,12 @@ function parseScheduleText(text){
   });
   return schedule;
 }
-function scheduleToText(schedule, totalMembers){
+function scheduleToText(schedule, totalMembers, durationMonths){
+  // Slot count follows whichever is larger — total members or duration in
+  // months — since some chit groups run more months than members or vice versa.
   schedule = schedule || {};
   const known = Object.keys(schedule).map(Number).filter(n=>!isNaN(n));
-  const maxNo = Math.max(Number(totalMembers)||0, ...known, 0);
+  const maxNo = Math.max(Number(totalMembers)||0, Number(durationMonths)||0, ...known, 0);
   if(maxNo===0) return '';
   const lines = [];
   for(let i=1;i<=maxNo;i++){
@@ -476,6 +485,13 @@ function render(){
   }
   if(!state){
     app.innerHTML = `<div class="empty-state" style="padding-top:90px;"><div class="mark-big">&#3495;</div><p>Loading the ledger from the cloud…</p></div>`;
+    return;
+  }
+
+  const memberPerson = findPersonByPortalEmail(currentUser.email);
+  if(memberPerson){
+    app.innerHTML = renderMemberPortal(memberPerson);
+    attachMemberPortalEvents();
     return;
   }
 
@@ -633,6 +649,7 @@ function renderPeople(){
     return `<tr>
       <td><b>${escapeHtml(p.name)}</b></td>
       <td><input class="cell-input" data-field="personRefBy" data-person="${p.id}" value="${escapeAttr(p.refBy||'')}" placeholder="Ref"/></td>
+      <td><input class="cell-input" type="email" data-field="personPortalEmail" data-person="${p.id}" value="${escapeAttr(p.portalEmail||'')}" placeholder="member's login email"/></td>
       <td>${groups.map(g=>`<span class="badge" style="background:var(--gold-soft);color:var(--maroon-dark);margin-right:4px;">${escapeHtml(g)}</span>`).join('')}</td>
       <td class="right num">${slotCount}</td>
       <td class="right num">${fmt(totalTaken)}</td>
@@ -644,12 +661,88 @@ function renderPeople(){
     <div class="card">
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Name</th><th>Ref By</th><th>Chit Groups</th><th class="right">Chit Slots</th><th class="right">Total Taken (₹)</th><th class="right">Unpaid Months</th></tr></thead>
-          <tbody>${rows || `<tr><td colspan="6" style="text-align:center;color:var(--ink-soft);padding:20px;">Not linked to any chit group yet.</td></tr>`}</tbody>
+          <thead><tr><th>Name</th><th>Ref By</th><th>Portal Login Email</th><th>Chit Groups</th><th class="right">Chit Slots</th><th class="right">Total Taken (₹)</th><th class="right">Unpaid Months</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="7" style="text-align:center;color:var(--ink-soft);padding:20px;">Not linked to any chit group yet.</td></tr>`}</tbody>
         </table>
       </div>
+      <div class="legend"><span style="color:var(--ink-soft);">Set a "Portal Login Email" to give that person their own read-only sign-in — create the matching email/password for them in Firebase Authentication first, same way as the 5 admin logins, then paste the same email here.</span></div>
     </div>
   `;
+}
+
+/* ============================= MEMBER PORTAL (read-only, per-person) ============================= */
+function renderMemberPortal(person){
+  const myChits = [];
+  state.chits.forEach(c=>{
+    const m = c.members.find(x=>x.personId===person.id);
+    if(m) myChits.push({chit:c, member:m});
+  });
+
+  let totalPendingAmount=0, totalPendingMonths=0, totalSlots=0, totalTaken=0;
+  const groupCards = myChits.map(({chit, member})=>{
+    const mAmt = monthlyAmount(chit);
+    const months = [];
+    for(let i=0;i<chit.durationMonths;i++) months.push(addMonths(chit.startMonth, i));
+
+    const slots = member.slots||[];
+    totalSlots += slots.length;
+    slots.forEach(s=>{ totalTaken += Number(s.chitTakenAmount)||0; });
+    const slotsHtml = slots.length
+      ? slots.map(s=>`<span class="badge" style="background:var(--gold-soft);color:var(--maroon-dark);margin-right:6px;">Chit No. ${s.takenChitNo??'—'} → ${fmt(s.chitTakenAmount||0)}</span>`).join('')
+      : `<span style="color:var(--ink-soft);font-size:12.5px;">Not won yet</span>`;
+
+    const statusLabel = {paid:'Paid', pending:'Pending', late:'Paid Late', '':'Not due yet'};
+    const statusClass = {paid:'pos', pending:'neg', late:'', '':''};
+    let pendingHere=0;
+    const monthRows = months.map(mk=>{
+      const st = member.payments[mk] || '';
+      if(st==='pending'){ pendingHere++; totalPendingMonths++; totalPendingAmount+=mAmt; }
+      const lateFor = (member.lateFor||{})[mk];
+      const extra = st==='late' && lateFor ? ` <span style="color:var(--ink-soft);font-size:11px;">(settles ${monthLabel(lateFor)})</span>` : '';
+      return `<tr>
+        <td>${monthLabel(mk)}</td>
+        <td><span class="badge ${statusClass[st]}" style="${st==='late'?'background:var(--blue-soft);color:var(--blue);':''}">${statusLabel[st]}</span>${extra}</td>
+        <td class="right num">${st?fmt(mAmt):'—'}</td>
+      </tr>`;
+    }).join('');
+
+    return `
+      <div class="card">
+        <div class="toolbar">
+          <h3 style="margin:0;">${escapeHtml(chit.name)}</h3>
+          <span style="flex:1;"></span>
+          ${pendingHere>0?`<span class="badge neg">${pendingHere} unpaid</span>`:`<span class="badge pos">All caught up</span>`}
+        </div>
+        <div class="sub" style="margin-bottom:10px;">Chit value ${fmt(chit.chitValue)} · monthly instalment ${fmt(mAmt)}</div>
+        <div style="margin-bottom:12px;"><b style="font-size:12.5px;color:var(--ink-soft);">Your chit slot(s):</b><br>${slotsHtml}</div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Month</th><th>Status</th><th class="right">Amount</th></tr></thead>
+            <tbody>${monthRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div style="max-width:720px;margin:0 auto;padding:20px 16px 60px;">
+      <div class="topbar">
+        <div><h2>My Chit Details</h2><div class="sub">${escapeHtml(person.name)} — read-only view of your own chit groups</div></div>
+        <button class="btn" id="btnMemberSignOut">Sign Out</button>
+      </div>
+      <div class="stat-row">
+        <div class="stat"><div class="label">Chit Groups Enrolled</div><div class="value">${myChits.length}</div></div>
+        <div class="stat"><div class="label">Chit Slots Won</div><div class="value">${totalSlots}</div></div>
+        <div class="stat"><div class="label">Total Amount Received</div><div class="value">${fmt(totalTaken)}</div></div>
+        <div class="stat"><div class="label">Pending Dues</div><div class="value ${totalPendingAmount>0?'neg':'pos'}">${fmt(totalPendingAmount)}</div></div>
+      </div>
+      ${groupCards || `<div class="empty-state"><div class="mark-big">&#3495;</div><p>You're not currently enrolled in any chit group.</p></div>`}
+    </div>
+  `;
+}
+
+function attachMemberPortalEvents(){
+  document.getElementById('btnMemberSignOut')?.addEventListener('click', ()=> signOut(auth));
 }
 
 /* ============================= REPORTS ============================= */
@@ -1201,6 +1294,17 @@ function attachEvents(){
         if(p){ p.refBy = el.value; scheduleSave(); }
         return;
       }
+      if(field==='personPortalEmail'){
+        const p = state.people.find(x=>x.id===personId);
+        if(p){
+          const email = el.value.trim();
+          const clash = email && state.people.some(x=>x.id!==p.id && x.portalEmail && x.portalEmail.toLowerCase()===email.toLowerCase());
+          if(clash){ alert('That email is already linked to another person — each portal login must be unique.'); render(); return; }
+          p.portalEmail = email;
+          scheduleSave();
+        }
+        return;
+      }
 
       const chit = state.chits.find(c=>c.id===chitId);
       if(!chit) return;
@@ -1458,19 +1562,24 @@ function renderModal(){
     document.body.appendChild(container);
     document.getElementById('mCancel').onclick = closeModal;
     // Auto-fill the schedule textarea with numbered lines (1, 2, 3...) as soon as
-    // Total Members is typed, so the admin only has to fill in amounts. Only
-    // touches the textarea while it's still empty or still matches an earlier
-    // auto-generated template, so it never clobbers amounts already typed in.
+    // Total Members or Duration is typed — using whichever is larger, since some
+    // groups run more months than members or vice versa. Only touches the textarea
+    // while it's still empty or still matches an earlier auto-generated template,
+    // so it never clobbers amounts already typed in.
     let lastAutoTemplate = '';
-    document.getElementById('fMembers').addEventListener('input', (e)=>{
-      const n = Number(e.target.value)||0;
+    const regenerateTemplate = ()=>{
+      const members = Number(document.getElementById('fMembers').value)||0;
+      const duration = Number(document.getElementById('fDuration').value)||0;
+      const n = Math.max(members, duration);
       const schEl = document.getElementById('fSchedule');
       if(schEl.value.trim()==='' || schEl.value===lastAutoTemplate){
         const template = n>0 ? Array.from({length:n},(_,i)=>`${i+1}: `).join('\n') : '';
         schEl.value = template;
         lastAutoTemplate = template;
       }
-    });
+    };
+    document.getElementById('fMembers').addEventListener('input', regenerateTemplate);
+    document.getElementById('fDuration').addEventListener('input', regenerateTemplate);
     document.getElementById('mSave').onclick = ()=>{
       const name = document.getElementById('fName').value.trim() || 'Untitled Chit';
       const value = Number(document.getElementById('fValue').value)||0;
@@ -1530,7 +1639,7 @@ function renderModal(){
         <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">${escapeHtml(chit.name)}</p>
         <div class="field">
           <label>One per line — chit no: amount</label>
-          <textarea id="fSchedule" rows="8" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-family:'JetBrains Mono',monospace;">${escapeHtml(scheduleToText(chit.distributionSchedule, chit.totalMembers))}</textarea>
+          <textarea id="fSchedule" rows="8" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-family:'JetBrains Mono',monospace;">${escapeHtml(scheduleToText(chit.distributionSchedule, chit.totalMembers, chit.durationMonths))}</textarea>
         </div>
         <div class="modal-actions">
           <button class="btn" id="mCancel">Cancel</button>
