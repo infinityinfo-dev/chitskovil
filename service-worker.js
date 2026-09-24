@@ -1,4 +1,4 @@
-const CACHE_NAME = 'chit-ledger-v9';
+const CACHE_NAME = 'chit-ledger-v10';
 const ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {

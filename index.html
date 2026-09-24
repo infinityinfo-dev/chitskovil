@@ -647,7 +647,7 @@ function renderPeople(){
     });
     if(groups.length===0) return '';
     return `<tr>
-      <td><b>${escapeHtml(p.name)}</b></td>
+      <td><b>${escapeHtml(p.name)}</b> ${p.portalEmail ? `<span class="badge pos" title="Portal login enabled" style="margin-left:4px;">Portal</span>` : ''}</td>
       <td><input class="cell-input" data-field="personRefBy" data-person="${p.id}" value="${escapeAttr(p.refBy||'')}" placeholder="Ref"/></td>
       <td><input class="cell-input" type="email" data-field="personPortalEmail" data-person="${p.id}" value="${escapeAttr(p.portalEmail||'')}" placeholder="member's login email"/></td>
       <td>${groups.map(g=>`<span class="badge" style="background:var(--gold-soft);color:var(--maroon-dark);margin-right:4px;">${escapeHtml(g)}</span>`).join('')}</td>
@@ -706,6 +706,18 @@ function renderMemberPortal(person){
       </tr>`;
     }).join('');
 
+    const myChitNos = new Set(slots.map(s=>Number(s.takenChitNo)).filter(n=>!isNaN(n)));
+    const scheduleRows = months.map((mk,i)=>{
+      const chitNo = i+1;
+      const amount = payoutForMonth(chit, i, mk);
+      const isMine = myChitNos.has(chitNo);
+      return `<tr${isMine?' style="background:var(--gold-soft);"':''}>
+        <td>${chitNo}${isMine?' <span class="badge pos" style="margin-left:4px;">Yours</span>':''}</td>
+        <td>${monthLabel(mk)}</td>
+        <td class="right num">${amount?fmt(amount):'—'}</td>
+      </tr>`;
+    }).join('');
+
     return `
       <div class="card">
         <div class="toolbar">
@@ -719,6 +731,13 @@ function renderMemberPortal(person){
           <table>
             <thead><tr><th>Month</th><th>Status</th><th class="right">Amount</th></tr></thead>
             <tbody>${monthRows}</tbody>
+          </table>
+        </div>
+        <div style="margin-top:16px;"><b style="font-size:12.5px;color:var(--ink-soft);">Chit Distribution Schedule — whole group</b></div>
+        <div class="table-scroll" style="margin-top:6px;">
+          <table>
+            <thead><tr><th>Chit No.</th><th>Payout Month</th><th class="right">Amount</th></tr></thead>
+            <tbody>${scheduleRows}</tbody>
           </table>
         </div>
       </div>`;
