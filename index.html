@@ -237,7 +237,7 @@ if(FIREBASE_CONFIGURED){
 
 /* ============================= STATE ============================= */
 let state = null;
-let ui = { view:'dashboard', chitId:null, modal:null, sidebarOpen:false, reportTab:'month', reportMonth:null, dashboardExpanded:false };
+let ui = { view:'dashboard', chitId:null, modal:null, sidebarOpen:false, reportTab:'month', reportMonth:null, dashboardExpanded:false, showAllMonths:false };
 let saveTimer = null;
 
 function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2,9); }
@@ -255,7 +255,7 @@ function defaultState(){
       {id:uid('m'), sno:3, personId:pB.id, payments:{}, slots:[{id:uid('slot'), takenChitNo:2, chitTakenAmount:9100}]},
     ]
   };
-  return { people: [pOrganiser, pA, pB], chits: [chit] };
+  return { people: [pOrganiser, pA, pB], chits: [chit], scheduleTemplates: {} };
 }
 
 function getOrCreatePerson(name){
@@ -350,6 +350,7 @@ async function persist(){
 }
 function migrate(){
   if(!Array.isArray(state.people)) state.people = [];
+  if(!state.scheduleTemplates || typeof state.scheduleTemplates!=='object') state.scheduleTemplates = {};
   state.people.forEach(p=>{
     if(p.refBy===undefined) p.refBy='';
     if(p.portalEmail===undefined) p.portalEmail='';
@@ -357,6 +358,17 @@ function migrate(){
   (state.chits||[]).forEach(c=>{
     if(!c.payoutOverride) c.payoutOverride = {};
     if(!c.distributionSchedule) c.distributionSchedule = {};
+    // Schedules are shared per chit value: lift any group-level schedule into the
+    // shared template for its value, and drop group entries that just repeat it.
+    (function(){
+      const key = String(Number(c.chitValue)||0);
+      const own = c.distributionSchedule;
+      if(Object.keys(own).length){
+        if(!state.scheduleTemplates[key]) state.scheduleTemplates[key] = Object.assign({}, own);
+        const tpl = state.scheduleTemplates[key];
+        Object.keys(own).forEach(k=>{ if(Number(tpl[k])===Number(own[k])) delete own[k]; });
+      }
+    })();
     if(!c.openingCarry) c.openingCarry = 0;
     (c.members||[]).forEach(m=>{
       if(!m.payments) m.payments = {};
@@ -410,14 +422,25 @@ function payoutForMonth(chit, monthIndex, monthKey){
       if(Number(s.takenChitNo)===monthIndex+1 && s.chitTakenAmount){ total += Number(s.chitTakenAmount); matched = true; }
     });
   });
-  if(!matched && chit.distributionSchedule && chit.distributionSchedule[monthIndex+1]!==undefined){
-    return Number(chit.distributionSchedule[monthIndex+1])||0;
+  if(!matched){
+    const sched = scheduledAmount(chit, monthIndex+1);
+    if(sched!==null) return sched||0;
   }
   return total;
 }
+// The distribution schedule is fixed per chit VALUE (all ₹1L groups share one,
+// all ₹2L groups share one, and so on). A group can still carry its own
+// override entries, which win over the shared schedule for those chit numbers.
+function templateKey(chit){ return String(Number(chit.chitValue)||0); }
+function effectiveSchedule(chit){
+  const tpl = (state && state.scheduleTemplates && state.scheduleTemplates[templateKey(chit)]) || {};
+  return Object.assign({}, tpl, chit.distributionSchedule||{});
+}
+function groupsWithSameValue(chit){
+  return state.chits.filter(c=>templateKey(c)===templateKey(chit));
+}
 function scheduledAmount(chit, chitNo){
-  if(!chit.distributionSchedule) return null;
-  const v = chit.distributionSchedule[chitNo];
+  const v = effectiveSchedule(chit)[chitNo];
   return (v===undefined || v==='') ? null : Number(v);
 }
 function parseScheduleText(text){
@@ -441,6 +464,41 @@ function scheduleToText(schedule, totalMembers, durationMonths){
     lines.push(`${i}: ${schedule[i]!==undefined ? schedule[i] : ''}`);
   }
   return lines.join('\n');
+}
+// Manual "Chit Paid" entries that differ from the shared schedule for these chit numbers.
+function countOverrideMismatches(chit, schedule){
+  let n = 0;
+  groupsWithSameValue(chit).forEach(g=>{
+    Object.keys(schedule).forEach(no=>{
+      const mk = addMonths(g.startMonth, Number(no)-1);
+      const ov = g.payoutOverride && g.payoutOverride[mk];
+      if(ov!==undefined && ov!=='' && Number(ov)!==Number(schedule[no])) n++;
+    });
+  });
+  return n;
+}
+// Save the shared schedule for this chit value and push it into every group of that
+// value: member slot amounts, and (optionally) manual Chit Paid entries.
+function applySharedSchedule(chit, schedule, clearOverrides){
+  if(!state.scheduleTemplates) state.scheduleTemplates = {};
+  state.scheduleTemplates[templateKey(chit)] = schedule;
+  let slotsUpdated = 0, overridesCleared = 0;
+  groupsWithSameValue(chit).forEach(g=>{
+    g.distributionSchedule = {};
+    g.members.forEach(m=>{
+      (m.slots||[]).forEach(s=>{
+        const sched = s.takenChitNo ? scheduledAmount(g, s.takenChitNo) : null;
+        if(sched!==null && Number(s.chitTakenAmount)!==sched){ s.chitTakenAmount = sched; slotsUpdated++; }
+      });
+    });
+    if(clearOverrides){
+      Object.keys(schedule).forEach(no=>{
+        const mk = addMonths(g.startMonth, Number(no)-1);
+        if(g.payoutOverride && g.payoutOverride[mk]!==undefined){ delete g.payoutOverride[mk]; overridesCleared++; }
+      });
+    }
+  });
+  return {slotsUpdated, overridesCleared};
 }
 function chitLedger(chit){
   const rows = [];
@@ -672,6 +730,14 @@ function renderPeople(){
 
 /* ============================= MEMBER PORTAL (read-only, per-person) ============================= */
 function renderMemberPortal(person){
+  // One soft colour per chit number won, so several wins in the same group stay easy to tell apart.
+  const SLOT_COLOURS = [
+    {bg:'#FFF1D6', bd:'#E0A526'},
+    {bg:'#F1E8FF', bd:'#8B5CF6'},
+    {bg:'#FFE6EF', bd:'#EC4899'},
+    {bg:'#E0F2FE', bd:'#0EA5E9'},
+    {bg:'#FFE8D9', bd:'#F97316'},
+  ];
   const myChits = [];
   state.chits.forEach(c=>{
     const m = c.members.find(x=>x.personId===person.id);
@@ -679,42 +745,48 @@ function renderMemberPortal(person){
   });
 
   let totalPendingAmount=0, totalPendingMonths=0, totalSlots=0, totalTaken=0;
+  const statusLabel = {paid:'Paid', pending:'Pending', late:'Paid late', '':'Not due yet'};
+  const statusClass = {paid:'pos', pending:'neg', late:'', '':''};
+
   const groupCards = myChits.map(({chit, member})=>{
     const mAmt = monthlyAmount(chit);
     const months = [];
     for(let i=0;i<chit.durationMonths;i++) months.push(addMonths(chit.startMonth, i));
 
-    const slots = member.slots||[];
-    totalSlots += slots.length;
-    slots.forEach(s=>{ totalTaken += Number(s.chitTakenAmount)||0; });
-    const slotsHtml = slots.length
-      ? slots.map(s=>`<span class="badge" style="background:var(--gold-soft);color:var(--maroon-dark);margin-right:6px;">Chit No. ${s.takenChitNo??'—'} → ${fmt(s.chitTakenAmount||0)}</span>`).join('')
-      : `<span style="color:var(--ink-soft);font-size:12.5px;">Not won yet</span>`;
+    const slotInfo = (member.slots||[]).slice()
+      .sort((a,b)=>(Number(a.takenChitNo)||999)-(Number(b.takenChitNo)||999))
+      .map((s,i)=>({s, colour:SLOT_COLOURS[i % SLOT_COLOURS.length]}));
+    const wonByNo = {};
+    slotInfo.forEach(({s,colour})=>{
+      totalSlots++;
+      totalTaken += Number(s.chitTakenAmount)||0;
+      if(s.takenChitNo && !wonByNo[Number(s.takenChitNo)]) wonByNo[Number(s.takenChitNo)] = {slot:s, colour};
+    });
 
-    const statusLabel = {paid:'Paid', pending:'Pending', late:'Paid Late', '':'Not due yet'};
-    const statusClass = {paid:'pos', pending:'neg', late:'', '':''};
-    let pendingHere=0;
-    const monthRows = months.map(mk=>{
+    const chips = slotInfo.length
+      ? slotInfo.map(({s,colour})=>{
+          const when = s.takenChitNo ? monthLabel(addMonths(chit.startMonth, Number(s.takenChitNo)-1)) : '';
+          return `<span class="badge" style="background:${colour.bg};color:var(--ink);border:1px solid ${colour.bd};margin:0 6px 6px 0;padding:4px 10px;font-size:12px;">★ Chit ${s.takenChitNo ?? '—'}${when ? ' · '+when : ''} · ${fmt(s.chitTakenAmount||0)}</span>`;
+        }).join('')
+      : `<span style="color:var(--ink-soft);font-size:12.5px;">No chit won yet</span>`;
+
+    let pendingHere = 0;
+    const rows = months.map((mk,i)=>{
+      const no = i+1;
       const st = member.payments[mk] || '';
-      if(st==='pending'){ pendingHere++; totalPendingMonths++; totalPendingAmount+=mAmt; }
+      if(st==='pending'){ pendingHere++; totalPendingMonths++; totalPendingAmount += mAmt; }
+      const won = wonByNo[no];
+      const amount = won ? (Number(won.slot.chitTakenAmount) || payoutForMonth(chit, i, mk)) : payoutForMonth(chit, i, mk);
       const lateFor = (member.lateFor||{})[mk];
       const extra = st==='late' && lateFor ? ` <span style="color:var(--ink-soft);font-size:11px;">(settles ${monthLabel(lateFor)})</span>` : '';
-      return `<tr>
-        <td>${monthLabel(mk)}</td>
+      const rowStyle = won ? ` style="background:${won.colour.bg};"` : '';
+      const edge = won ? `border-left:4px solid ${won.colour.bd};` : '';
+      const strong = won ? 'font-weight:700;' : '';
+      return `<tr${rowStyle}>
+        <td style="${edge}${strong}">${no}${won ? ' ★' : ''}</td>
+        <td style="${strong}">${monthLabel(mk)}</td>
         <td><span class="badge ${statusClass[st]}" style="${st==='late'?'background:var(--blue-soft);color:var(--blue);':''}">${statusLabel[st]}</span>${extra}</td>
-        <td class="right num">${st?fmt(mAmt):'—'}</td>
-      </tr>`;
-    }).join('');
-
-    const myChitNos = new Set(slots.map(s=>Number(s.takenChitNo)).filter(n=>!isNaN(n)));
-    const scheduleRows = months.map((mk,i)=>{
-      const chitNo = i+1;
-      const amount = payoutForMonth(chit, i, mk);
-      const isMine = myChitNos.has(chitNo);
-      return `<tr${isMine?' style="background:var(--gold-soft);"':''}>
-        <td>${chitNo}${isMine?' <span class="badge pos" style="margin-left:4px;">Yours</span>':''}</td>
-        <td>${monthLabel(mk)}</td>
-        <td class="right num">${amount?fmt(amount):'—'}</td>
+        <td class="right num" style="${strong}">${amount ? fmt(amount) : '—'}</td>
       </tr>`;
     }).join('');
 
@@ -723,21 +795,13 @@ function renderMemberPortal(person){
         <div class="toolbar">
           <h3 style="margin:0;">${escapeHtml(chit.name)}</h3>
           <span style="flex:1;"></span>
-          ${pendingHere>0?`<span class="badge neg">${pendingHere} unpaid</span>`:`<span class="badge pos">All caught up</span>`}
+          ${pendingHere>0 ? `<span class="badge neg">${pendingHere} unpaid</span>` : `<span class="badge pos">All caught up</span>`}
         </div>
-        <div class="sub" style="margin-bottom:10px;">Chit value ${fmt(chit.chitValue)} · monthly instalment ${fmt(mAmt)}</div>
-        <div style="margin-bottom:12px;"><b style="font-size:12.5px;color:var(--ink-soft);">Your chit slot(s):</b><br>${slotsHtml}</div>
+        <div style="margin:10px 0 6px;">${chips}</div>
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Month</th><th>Status</th><th class="right">Amount</th></tr></thead>
-            <tbody>${monthRows}</tbody>
-          </table>
-        </div>
-        <div style="margin-top:16px;"><b style="font-size:12.5px;color:var(--ink-soft);">Chit Distribution Schedule — whole group</b></div>
-        <div class="table-scroll" style="margin-top:6px;">
-          <table>
-            <thead><tr><th>Chit No.</th><th>Payout Month</th><th class="right">Amount</th></tr></thead>
-            <tbody>${scheduleRows}</tbody>
+            <thead><tr><th>Chit No.</th><th>Month</th><th>Status</th><th class="right">Distribution</th></tr></thead>
+            <tbody>${rows}</tbody>
           </table>
         </div>
       </div>`;
@@ -746,14 +810,13 @@ function renderMemberPortal(person){
   return `
     <div style="max-width:720px;margin:0 auto;padding:20px 16px 60px;">
       <div class="topbar">
-        <div><h2>My Chit Details</h2><div class="sub">${escapeHtml(person.name)} — read-only view of your own chit groups</div></div>
+        <div><h2>My Chit Details</h2><div class="sub">${escapeHtml(person.name)}${totalSlots ? ' — ★ marks the chit you won; each colour is a different chit number' : ''}</div></div>
         <button class="btn" id="btnMemberSignOut">Sign Out</button>
       </div>
       <div class="stat-row">
-        <div class="stat"><div class="label">Chit Groups Enrolled</div><div class="value">${myChits.length}</div></div>
-        <div class="stat"><div class="label">Chit Slots Won</div><div class="value">${totalSlots}</div></div>
-        <div class="stat"><div class="label">Total Amount Received</div><div class="value">${fmt(totalTaken)}</div></div>
-        <div class="stat"><div class="label">Pending Dues</div><div class="value ${totalPendingAmount>0?'neg':'pos'}">${fmt(totalPendingAmount)}</div></div>
+        <div class="stat"><div class="label">Chits Won</div><div class="value">${totalSlots}</div></div>
+        <div class="stat"><div class="label">Amount Received</div><div class="value">${fmt(totalTaken)}</div></div>
+        <div class="stat"><div class="label">Pending Dues</div><div class="value ${totalPendingAmount>0?'neg':'pos'}">${fmt(totalPendingAmount)}</div>${totalPendingMonths>0 ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${totalPendingMonths} unpaid month${totalPendingMonths>1?'s':''}</div>` : ''}</div>
       </div>
       ${groupCards || `<div class="empty-state"><div class="mark-big">&#3495;</div><p>You're not currently enrolled in any chit group.</p></div>`}
     </div>
@@ -1147,14 +1210,24 @@ function renderChitView(chit){
   const totalOutstanding = ledger.reduce((s,r)=>s+r.outstanding,0);
 
   const months = ledger.map(r=>r.monthKey);
+  // By default show only the previous 2 months + the current month; closed months
+  // stay hidden until "Show all months" is tapped. (Unpaid counts still cover every month.)
+  let visibleMonths = months;
+  if(!ui.showAllMonths && months.length>3){
+    const curKey = currentMonthKey();
+    let ci = months.indexOf(curKey);
+    if(ci===-1) ci = curKey < months[0] ? 2 : months.length-1;
+    const startIdx = Math.max(0, ci-2);
+    visibleMonths = months.slice(startIdx, startIdx+3);
+  }
   const memberPersonIds = new Set(chit.members.map(m=>m.personId));
   const availableToAdd = state.people.filter(p=>!memberPersonIds.has(p.id));
 
   // Members grid
-  const headerMonths = months.map(mk=>`<th class="right">${monthLabel(mk)}</th>`).join('');
+  const headerMonths = visibleMonths.map(mk=>`<th class="right">${monthLabel(mk)}<br><button class="btn ghost small" style="padding:1px 6px;font-size:10.5px;" data-markall-paid="1" data-chit="${chit.id}" data-month="${mk}">✓ All</button></th>`).join('');
   const peopleDatalist = `<datalist id="peopleList">${state.people.map(p=>`<option value="${escapeAttr(p.name)}">`).join('')}</datalist>`;
   const memberRows = chit.members.map(m=>{
-    const cells = months.map((mk,i)=>{
+    const cells = visibleMonths.map((mk,i)=>{
       const st = m.payments[mk] || '';
       const dispMap = {paid:'X', pending:'!', late:'L', '':'·'};
       const cls = st || 'future';
@@ -1190,7 +1263,7 @@ function renderChitView(chit){
     </tr>`;
   }).join('');
 
-  const ledgerRows = ledger.map(r=>`
+  const ledgerRows = ledger.filter(r=>visibleMonths.includes(r.monthKey)).map(r=>`
     <tr>
       <td>${r.idx}</td>
       <td>${monthLabel(r.monthKey)}</td>
@@ -1205,11 +1278,12 @@ function renderChitView(chit){
       <td class="right num" style="font-weight:700;${r.closing<0?'color:var(--red);':''}">${fmt(r.closing)}</td>
     </tr>`).join('');
 
-  const scheduleEntries = Object.keys(chit.distributionSchedule||{}).map(Number).sort((a,b)=>a-b);
+  const effSchedule = effectiveSchedule(chit);
+  const scheduleEntries = Object.keys(effSchedule).map(Number).sort((a,b)=>a-b);
   const scheduleHtml = scheduleEntries.length ? `
     <div class="table-scroll">
       <table><thead><tr><th>Chit No.</th><th class="right">Scheduled Amount</th></tr></thead>
-      <tbody>${scheduleEntries.map(no=>`<tr><td>#${no}</td><td class="right num">${fmt(chit.distributionSchedule[no])}</td></tr>`).join('')}</tbody></table>
+      <tbody>${scheduleEntries.map(no=>`<tr><td>#${no}</td><td class="right num">${fmt(effSchedule[no])}</td></tr>`).join('')}</tbody></table>
     </div>` : `<p style="color:var(--ink-soft);font-size:12.5px;">No distribution schedule set — chit slot amounts will need to be entered per member instead.</p>`;
 
   return `
@@ -1235,13 +1309,14 @@ function renderChitView(chit){
         <button class="btn ghost small" data-edit-schedule="${chit.id}">Edit Schedule</button>
       </div>
       ${scheduleHtml}
-      <div class="legend"><span style="color:var(--ink-soft);">Set once here, and it auto-fills a member's chit slot amount when you type a matching chit no. below.</span></div>
+      <div class="legend"><span style="color:var(--ink-soft);">Shared by every ${fmt(chit.chitValue)} group — edit it once and all of them update. It auto-fills a member's chit slot amount when you type a matching chit no. below.</span></div>
     </div>
 
     <div class="card">
       <div class="toolbar">
         <h3 style="margin:0;">Members &amp; Monthly Collection</h3>
         <span style="flex:1;"></span>
+        ${months.length>3 ? `<button class="btn ghost small" id="btnToggleMonths">${ui.showAllMonths ? 'Show recent 3 months' : 'Show all months'}</button>` : ''}
         <button class="btn ghost small" id="btnAddExistingMember" ${availableToAdd.length===0?'disabled':''}>+ Add Existing Member</button>
         <button class="btn primary small" id="btnAddMember">+ New Member</button>
       </div>
@@ -1291,6 +1366,21 @@ function attachEvents(){
   document.getElementById('btnNewChitQuick')?.addEventListener('click', ()=> openModal('newChit'));
   document.getElementById('btnAddMember')?.addEventListener('click', ()=> addMember(ui.chitId));
   document.getElementById('btnAddExistingMember')?.addEventListener('click', ()=> openModal('addExisting', ui.chitId));
+  document.getElementById('btnToggleMonths')?.addEventListener('click', ()=>{ ui.showAllMonths = !ui.showAllMonths; render(); });
+  document.querySelectorAll('[data-markall-paid]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const chit = state.chits.find(c=>c.id===el.dataset.chit);
+      if(!chit) return;
+      const mk = el.dataset.month;
+      // Everyone not already Paid or Late-paid (late entries carry their own settled-month note).
+      const targets = chit.members.filter(m=>m.payments[mk]!=='paid' && m.payments[mk]!=='late');
+      if(!targets.length){ alert('Everyone is already marked paid (or late-paid) for '+monthLabel(mk)+'.'); return; }
+      const pend = targets.filter(m=>m.payments[mk]==='pending').length;
+      if(!confirm('Mark '+targets.length+' member(s) as Paid for '+monthLabel(mk)+'?'+(pend ? '\n\n'+pend+' of them are currently marked pending.' : ''))) return;
+      targets.forEach(m=>{ m.payments[mk] = 'paid'; });
+      scheduleSave(); render();
+    });
+  });
 
   document.querySelectorAll('[data-nav]').forEach(el=>{
     el.addEventListener('click', ()=>{
@@ -1342,7 +1432,7 @@ function attachEvents(){
         if(!s) return;
         const key = field==='slotNo' ? 'takenChitNo' : 'chitTakenAmount';
         s[key] = el.value===''?null:Number(el.value);
-        if(field==='slotNo' && (s.chitTakenAmount===null || s.chitTakenAmount===undefined)){
+        if(field==='slotNo'){
           const sched = scheduledAmount(chit, s.takenChitNo);
           if(sched!==null){ s.chitTakenAmount = sched; }
         }
@@ -1571,7 +1661,7 @@ function renderModal(){
         <div class="field">
           <label>Chit Distribution Schedule (optional)</label>
           <textarea id="fSchedule" rows="4" placeholder="One per line — chit no: amount&#10;1: 22000&#10;2: 23000&#10;3: 24000" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-family:'JetBrains Mono',monospace;"></textarea>
-          <p style="font-size:11px;color:var(--ink-soft);margin:4px 0 0;">Sets the payout amount for each chit no. up front — it auto-fills a member's slot amount later when you assign that number to them.</p>
+          <p style="font-size:11px;color:var(--ink-soft);margin:4px 0 0;">Schedules are shared by chit value — if ₹1L, ₹2L or ₹3L groups already have one, it loads here automatically after you enter the Chit Value. Fill it once and every group of that value uses it.</p>
         </div>
         <div class="modal-actions">
           <button class="btn" id="mCancel">Cancel</button>
@@ -1587,16 +1677,18 @@ function renderModal(){
     // so it never clobbers amounts already typed in.
     let lastAutoTemplate = '';
     const regenerateTemplate = ()=>{
+      const value = Number(document.getElementById('fValue').value)||0;
       const members = Number(document.getElementById('fMembers').value)||0;
       const duration = Number(document.getElementById('fDuration').value)||0;
-      const n = Math.max(members, duration);
+      const shared = (state.scheduleTemplates||{})[String(value)] || {};
       const schEl = document.getElementById('fSchedule');
       if(schEl.value.trim()==='' || schEl.value===lastAutoTemplate){
-        const template = n>0 ? Array.from({length:n},(_,i)=>`${i+1}: `).join('\n') : '';
+        const template = scheduleToText(shared, members, duration);
         schEl.value = template;
         lastAutoTemplate = template;
       }
     };
+    document.getElementById('fValue').addEventListener('input', regenerateTemplate);
     document.getElementById('fMembers').addEventListener('input', regenerateTemplate);
     document.getElementById('fDuration').addEventListener('input', regenerateTemplate);
     document.getElementById('mSave').onclick = ()=>{
@@ -1606,9 +1698,21 @@ function renderModal(){
       const start = document.getElementById('fStart').value || currentMonthKey();
       const duration = Number(document.getElementById('fDuration').value)||members;
       const opening = Number(document.getElementById('fOpening').value)||0;
-      const distributionSchedule = parseScheduleText(document.getElementById('fSchedule').value);
+      const typedSchedule = parseScheduleText(document.getElementById('fSchedule').value);
+      if(!state.scheduleTemplates) state.scheduleTemplates = {};
+      const existingShared = state.scheduleTemplates[String(value)];
+      if(Object.keys(typedSchedule).length){
+        if(!existingShared){
+          state.scheduleTemplates[String(value)] = typedSchedule;
+        } else {
+          const changed = Object.keys(typedSchedule).some(k=>Number(existingShared[k])!==Number(typedSchedule[k]));
+          if(changed && confirm('A schedule for '+fmt(value)+' chits already exists. Replace it for ALL '+fmt(value)+' groups?\n\nOK = replace for all groups, Cancel = keep the existing shared schedule.')){
+            state.scheduleTemplates[String(value)] = Object.assign({}, existingShared, typedSchedule);
+          }
+        }
+      }
       const id = uid('chit');
-      state.chits.push({id, name, chitValue:value, totalMembers:members, durationMonths:duration, startMonth:start, openingCarry:opening, members:[], payoutOverride:{}, distributionSchedule});
+      state.chits.push({id, name, chitValue:value, totalMembers:members, durationMonths:duration, startMonth:start, openingCarry:opening, members:[], payoutOverride:{}, distributionSchedule:{}});
       scheduleSave();
       ui.modal=null; ui.view='chit'; ui.chitId=id;
       render();
@@ -1652,13 +1756,16 @@ function renderModal(){
 
   if(ui.modal.type==='editSchedule'){
     const chit = state.chits.find(c=>c.id===ui.modal.chitId);
+    const sameValue = groupsWithSameValue(chit);
+    const maxMembers = Math.max(...sameValue.map(c=>Number(c.totalMembers)||0), 0);
+    const maxDuration = Math.max(...sameValue.map(c=>Number(c.durationMonths)||0), 0);
     container.innerHTML = `
       <div class="modal">
         <h3>Chit Distribution Schedule</h3>
-        <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">${escapeHtml(chit.name)}</p>
+        <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">Shared by every ${fmt(chit.chitValue)} chit group (${sameValue.length}): ${sameValue.map(c=>escapeHtml(c.name)).join(', ')}. Change it once here and all of them use it. Saving also updates the amount on every member's slot with these chit numbers, and the Chit Paid column follows.</p>
         <div class="field">
           <label>One per line — chit no: amount</label>
-          <textarea id="fSchedule" rows="8" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-family:'JetBrains Mono',monospace;">${escapeHtml(scheduleToText(chit.distributionSchedule, chit.totalMembers, chit.durationMonths))}</textarea>
+          <textarea id="fSchedule" rows="8" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-family:'JetBrains Mono',monospace;">${escapeHtml(scheduleToText(effectiveSchedule(chit), maxMembers, maxDuration))}</textarea>
         </div>
         <div class="modal-actions">
           <button class="btn" id="mCancel">Cancel</button>
@@ -1668,16 +1775,16 @@ function renderModal(){
     document.body.appendChild(container);
     document.getElementById('mCancel').onclick = closeModal;
     document.getElementById('mSave').onclick = ()=>{
-      chit.distributionSchedule = parseScheduleText(document.getElementById('fSchedule').value);
-      // Backfill any slot that already has a chit no. but no amount yet.
-      chit.members.forEach(m=>{
-        (m.slots||[]).forEach(s=>{
-          if(s.takenChitNo && (s.chitTakenAmount===null || s.chitTakenAmount===undefined)){
-            const sched = scheduledAmount(chit, s.takenChitNo);
-            if(sched!==null) s.chitTakenAmount = sched;
-          }
-        });
-      });
+      const parsed = parseScheduleText(document.getElementById('fSchedule').value);
+      // The schedule is fixed per chit value: update every group's slot amounts, and
+      // the Chit Paid column follows. Manual Chit Paid entries are replaced only if
+      // you agree.
+      let clear = true;
+      const mismatches = countOverrideMismatches(chit, parsed);
+      if(mismatches>0){
+        clear = confirm(mismatches+' Chit Paid value(s) were typed in by hand and differ from this schedule.\n\nOK = replace them with the schedule, Cancel = keep the typed values.');
+      }
+      applySharedSchedule(chit, parsed, clear);
       scheduleSave();
       ui.modal=null;
       render();
