@@ -190,6 +190,9 @@
     background:#fff;font-size:12.5px;font-weight:600;white-space:nowrap;color:var(--ink);
   }
   .mobile-quicknav button.active{background:var(--maroon);color:#fff;border-color:var(--maroon);}
+  .portal-nav{display:flex;gap:8px;overflow-x:auto;padding:10px;margin:0 0 14px;background:var(--gold-soft);border-radius:14px;position:sticky;top:6px;z-index:20;-webkit-overflow-scrolling:touch;}
+  .portal-nav button{flex:0 0 auto;padding:8px 14px;border-radius:20px;border:1px solid var(--line);background:#fff;font-size:12.5px;font-weight:600;white-space:nowrap;color:var(--ink);}
+  .portal-nav button.active{background:var(--maroon);color:#fff;border-color:var(--maroon);}
   @media (max-width:800px){
     .mobile-quicknav{display:flex;}
     .main{padding-top:116px;}
@@ -237,7 +240,7 @@ if(FIREBASE_CONFIGURED){
 
 /* ============================= STATE ============================= */
 let state = null;
-let ui = { view:'dashboard', chitId:null, modal:null, sidebarOpen:false, reportTab:'month', reportMonth:null, dashboardExpanded:false, showAllMonths:false };
+let ui = { view:'dashboard', chitId:null, modal:null, sidebarOpen:false, reportTab:'month', reportMonth:null, dashboardExpanded:false, showAllMonths:false, portalView:'dashboard' };
 let saveTimer = null;
 
 function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2,9); }
@@ -357,6 +360,7 @@ function migrate(){
   });
   (state.chits||[]).forEach(c=>{
     if(!c.payoutOverride) c.payoutOverride = {};
+    if(!c.denoms) c.denoms = {};
     if(!c.distributionSchedule) c.distributionSchedule = {};
     // Schedules are shared per chit value: lift any group-level schedule into the
     // shared template for its value, and drop group entries that just repeat it.
@@ -499,6 +503,32 @@ function applySharedSchedule(chit, schedule, clearOverrides){
     }
   });
   return {slotsUpdated, overridesCleared};
+}
+// ---- Monthly closing cash count (note denominations) ----
+const DENOMS = [2000,500,200,100,50,20,10];
+function denomTotal(d){
+  if(!d) return null;
+  let t = Number(d.coins)||0;
+  DENOMS.forEach(v=>{ t += v*(Number(d[v])||0); });
+  return t;
+}
+function denomReportData(mk){
+  const info = state.chits.map(c=>{
+    const row = chitLedger(c).find(r=>r.monthKey===mk);
+    if(!row) return null;
+    const d = (c.denoms||{})[mk] || null;
+    return {chit:c, d, closing:Math.round(row.closing), counted: d ? denomTotal(d) : null};
+  }).filter(Boolean);
+  const denomRows = DENOMS.map(v=>{
+    const counts = info.map(x=> x.d ? (Number(x.d[v])||0) : null);
+    return {v, counts, total: counts.reduce((s,n)=>s+(n||0),0)};
+  }).filter(r=>r.total>0);
+  const coinCells = info.map(x=> x.d ? (Number(x.d.coins)||0) : null);
+  const coinTotal = coinCells.reduce((s,n)=>s+(n||0),0);
+  const counted = info.filter(x=>x.counted!==null);
+  const countedTotal = counted.reduce((s,x)=>s+x.counted,0);
+  const closingOfCounted = counted.reduce((s,x)=>s+x.closing,0);
+  return {info, denomRows, coinCells, coinTotal, countedTotal, closingOfCounted, anyCounted: counted.length>0};
 }
 function chitLedger(chit){
   const rows = [];
@@ -748,7 +778,7 @@ function renderMemberPortal(person){
   const statusLabel = {paid:'Paid', pending:'Pending', late:'Paid late', '':'Not due yet'};
   const statusClass = {paid:'pos', pending:'neg', late:'', '':''};
 
-  const groupCards = myChits.map(({chit, member})=>{
+  const groups = myChits.map(({chit, member})=>{
     const mAmt = monthlyAmount(chit);
     const months = [];
     for(let i=0;i<chit.durationMonths;i++) months.push(addMonths(chit.startMonth, i));
@@ -790,44 +820,133 @@ function renderMemberPortal(person){
       </tr>`;
     }).join('');
 
-    return `
-      <div class="card">
-        <div class="toolbar">
-          <h3 style="margin:0;">${escapeHtml(chit.name)}</h3>
-          <span style="flex:1;"></span>
-          ${pendingHere>0 ? `<span class="badge neg">${pendingHere} unpaid</span>` : `<span class="badge pos">All caught up</span>`}
-        </div>
-        <div style="margin:10px 0 6px;">${chips}</div>
-        <div class="table-scroll">
+    const badge = pendingHere>0 ? `<span class="badge neg">${pendingHere} unpaid</span>` : `<span class="badge pos">All caught up</span>`;
+    const table = `<div class="table-scroll">
           <table>
             <thead><tr><th>Chit No.</th><th>Month</th><th>Status</th><th class="right">Distribution</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
-        </div>
-      </div>`;
-  }).join('');
+        </div>`;
+    return {chit, chips, badge, table};
+  });
 
-  return `
-    <div style="max-width:720px;margin:0 auto;padding:20px 16px 60px;">
-      <div class="topbar">
-        <div><h2>My Chit Details</h2><div class="sub">${escapeHtml(person.name)}${totalSlots ? ' — ★ marks the chit you won; each colour is a different chit number' : ''}</div></div>
-        <button class="btn" id="btnMemberSignOut">Sign Out</button>
-      </div>
+  // Same pill navigation as the admin pages: Dashboard + one pill per chit group.
+  let view = ui.portalView;
+  if(view!=='dashboard' && !groups.some(g=>g.chit.id===view)) view = 'dashboard';
+
+  const pills = `<div class="portal-nav">
+      <button class="${view==='dashboard'?'active':''}" data-portal-view="dashboard">Dashboard</button>
+      ${groups.map(g=>`<button class="${view===g.chit.id?'active':''}" data-portal-view="${g.chit.id}">${escapeHtml(g.chit.name)}</button>`).join('')}
+    </div>`;
+
+  let bodyHtml;
+  if(view==='dashboard'){
+    const cards = groups.map(g=>`
+      <div class="card" style="cursor:pointer;" data-portal-view="${g.chit.id}">
+        <div class="toolbar" style="margin-bottom:8px;">
+          <h3 style="margin:0;">${escapeHtml(g.chit.name)}</h3>
+          <span style="flex:1;"></span>
+          ${g.badge}
+        </div>
+        <div>${g.chips}</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">Tap to see month by month →</div>
+      </div>`).join('');
+    bodyHtml = `
       <div class="stat-row">
         <div class="stat"><div class="label">Chits Won</div><div class="value">${totalSlots}</div></div>
         <div class="stat"><div class="label">Amount Received</div><div class="value">${fmt(totalTaken)}</div></div>
         <div class="stat"><div class="label">Pending Dues</div><div class="value ${totalPendingAmount>0?'neg':'pos'}">${fmt(totalPendingAmount)}</div>${totalPendingMonths>0 ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${totalPendingMonths} unpaid month${totalPendingMonths>1?'s':''}</div>` : ''}</div>
       </div>
-      ${groupCards || `<div class="empty-state"><div class="mark-big">&#3495;</div><p>You're not currently enrolled in any chit group.</p></div>`}
+      ${cards || `<div class="empty-state"><div class="mark-big">&#3495;</div><p>You're not currently enrolled in any chit group.</p></div>`}`;
+  } else {
+    const g = groups.find(x=>x.chit.id===view);
+    bodyHtml = `
+      <div class="card">
+        <div class="toolbar">
+          <h3 style="margin:0;">${escapeHtml(g.chit.name)}</h3>
+          <span style="flex:1;"></span>
+          ${g.badge}
+        </div>
+        <div style="margin:10px 0 6px;">${g.chips}</div>
+        ${g.table}
+      </div>`;
+  }
+
+  return `
+    <div style="max-width:720px;width:100%;margin:0 auto;padding:20px 16px 60px;">
+      <div class="topbar">
+        <div><h2>My Chit Details</h2><div class="sub">${escapeHtml(person.name)}${totalSlots ? ' — ★ marks the chit you won; each colour is a different chit number' : ''}</div></div>
+        <button class="btn" id="btnMemberSignOut">Sign Out</button>
+      </div>
+      ${pills}
+      ${bodyHtml}
     </div>
   `;
 }
 
 function attachMemberPortalEvents(){
   document.getElementById('btnMemberSignOut')?.addEventListener('click', ()=> signOut(auth));
+  document.querySelectorAll('[data-portal-view]').forEach(el=>{
+    el.addEventListener('click', ()=>{ ui.portalView = el.dataset.portalView; render(); window.scrollTo(0,0); });
+  });
 }
 
 /* ============================= REPORTS ============================= */
+function renderReportDenomination(){
+  const months = allMonthsUnion();
+  if(months.length===0) return `<div class="empty-state"><p>No months to report on yet.</p></div>`;
+  if(!ui.reportMonth || !months.includes(ui.reportMonth)) ui.reportMonth = months[months.length-1];
+  const mk = ui.reportMonth;
+  const monthOptions = months.map(m=>`<option value="${m}" ${m===mk?'selected':''}>${monthLabel(m)}</option>`).join('');
+  const r = denomReportData(mk);
+  const dash = '<span style="color:var(--ink-soft);">—</span>';
+  const diffHtml = d => d===0 ? '<span class="badge pos">Tally ✓</span>' : `<span class="badge neg">${d>0?'+':''}${fmt(d)}</span>`;
+  const heads = r.info.map(x=>`<th class="right">${escapeHtml(x.chit.name)}</th>`).join('');
+  const noteRows = r.denomRows.map(row=>`<tr><td><b>₹${row.v}</b></td>${row.counts.map(n=>`<td class="right num">${n===null||n===0?dash:n}</td>`).join('')}<td class="right num">${row.total}</td><td class="right num" style="font-weight:600;">${fmt(row.v*row.total)}</td></tr>`).join('');
+  const coinRow = r.coinTotal>0 ? `<tr><td><b>Coins</b></td>${r.coinCells.map(n=>`<td class="right num">${n===null||n===0?dash:fmt(n)}</td>`).join('')}<td class="right num">${dash}</td><td class="right num" style="font-weight:600;">${fmt(r.coinTotal)}</td></tr>` : '';
+  const countedRow = `<tr style="background:var(--gray-soft);"><td><b>Cash counted</b></td>${r.info.map(x=>`<td class="right num"><b>${x.counted===null?'—':fmt(x.counted)}</b></td>`).join('')}<td></td><td class="right num"><b>${r.anyCounted?fmt(r.countedTotal):'—'}</b></td></tr>`;
+  const closingRow = `<tr><td>Ledger closing</td>${r.info.map(x=>`<td class="right num">${fmt(x.closing)}</td>`).join('')}<td></td><td class="right num">${r.anyCounted?fmt(r.closingOfCounted):'—'}</td></tr>`;
+  const diffRow = `<tr><td><b>Difference</b></td>${r.info.map(x=>`<td class="right">${x.counted===null?dash:diffHtml(x.counted-x.closing)}</td>`).join('')}<td></td><td class="right">${r.anyCounted?diffHtml(r.countedTotal-r.closingOfCounted):dash}</td></tr>`;
+
+  const summary = months.slice().reverse().map(m=>{
+    let counted=0, closing=0, n=0;
+    state.chits.forEach(c=>{
+      const d = (c.denoms||{})[m]; if(!d) return;
+      const row = chitLedger(c).find(x=>x.monthKey===m); if(!row) return;
+      n++; counted += denomTotal(d); closing += Math.round(row.closing);
+    });
+    return n ? `<tr><td>${monthLabel(m)}</td><td class="right num">${n}</td><td class="right num">${fmt(counted)}</td><td class="right num">${fmt(closing)}</td><td class="right">${diffHtml(counted-closing)}</td></tr>` : '';
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="toolbar">
+        <h3 style="margin:0;">Month</h3>
+        <select id="reportMonthSelect" style="padding:7px 10px;border:1px solid var(--line);border-radius:8px;">${monthOptions}</select>
+        <span style="flex:1;"></span>
+        ${r.anyCounted ? '<button class="btn small" id="btnExportDenom">Export CSV</button>' : ''}
+      </div>
+      ${r.anyCounted ? '' : `<p style="color:var(--ink-soft);font-size:12.5px;margin:0 0 10px;">No cash count saved for ${monthLabel(mk)} yet. Open a chit group, find the month in the Group Ledger and tap <b>Count</b>.</p>`}
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Denomination</th>${heads}<th class="right">Total count</th><th class="right">Value</th></tr></thead>
+          <tbody>${noteRows}${coinRow}${countedRow}${closingRow}${diffRow}</tbody>
+        </table>
+      </div>
+      <div class="legend"><span style="color:var(--ink-soft);">Counts are notes per denomination. Totals compare only the chit groups whose cash was counted this month.</span></div>
+    </div>
+    <div class="card">
+      <h3>Month-wise cash summary (all chit groups)</h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Month</th><th class="right">Groups counted</th><th class="right">Cash counted</th><th class="right">Ledger closing</th><th class="right">Difference</th></tr></thead>
+          <tbody>${summary || `<tr><td colspan="5" style="text-align:center;color:var(--ink-soft);padding:16px;">No cash counts saved yet.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
 const REPORT_TABS = [
   {id:'month', label:'Month-wise'},
   {id:'chit', label:'Chit-wise'},
@@ -835,6 +954,7 @@ const REPORT_TABS = [
   {id:'pending', label:'Pending List'},
   {id:'distribution', label:'Chit Distribution'},
   {id:'nontaker', label:'Non Chit-Takers'},
+  {id:'denom', label:'Denomination'},
 ];
 
 function renderReports(){
@@ -853,6 +973,7 @@ function renderReports(){
   else if(ui.reportTab==='pending') body = renderReportPending();
   else if(ui.reportTab==='distribution') body = renderReportDistribution();
   else if(ui.reportTab==='nontaker') body = renderReportNonTaker();
+  else if(ui.reportTab==='denom') body = renderReportDenomination();
 
   return `
     <div class="topbar"><div><h2>Reports</h2><div class="sub">Every angle on the temple's chit funds — by month, by group, by person, and by outstanding dues</div></div></div>
@@ -1276,6 +1397,13 @@ function renderChitView(chit){
           data-field="payout" data-chit="${chit.id}" data-month="${r.monthKey}" value="${chit.payoutOverride[r.monthKey] ?? r.chitPaid}"/>
       </td>
       <td class="right num" style="font-weight:700;${r.closing<0?'color:var(--red);':''}">${fmt(r.closing)}</td>
+      <td class="right num">${(()=>{
+        const dn = chit.denoms && chit.denoms[r.monthKey];
+        const dt = dn ? denomTotal(dn) : null;
+        if(dt===null) return `<button class="btn ghost small" data-denom-open="${chit.id}" data-month="${r.monthKey}">Count</button>`;
+        const diff = dt - Math.round(r.closing);
+        return `<button class="btn ghost small" data-denom-open="${chit.id}" data-month="${r.monthKey}">${fmt(dt)}</button> ${diff===0 ? '<span class="badge pos">✓</span>' : `<span class="badge neg">${diff>0?'+':''}${fmt(diff)}</span>`}`;
+      })()}</td>
     </tr>`).join('');
 
   const effSchedule = effectiveSchedule(chit);
@@ -1345,13 +1473,13 @@ function renderChitView(chit){
         <table>
           <thead><tr>
             <th>#</th><th>Month</th><th class="right">Opening</th><th class="right">Chit Collection</th>
-            <th class="right">Pending Received</th><th class="right">Total Collection</th><th class="right">Chit Paid</th><th class="right">Closing</th>
+            <th class="right">Pending Received</th><th class="right">Total Collection</th><th class="right">Chit Paid</th><th class="right">Closing</th><th class="right">Cash Count</th>
           </tr></thead>
           <tbody>${ledgerRows}</tbody>
         </table>
       </div>
       <div class="legend">
-        <span>Formulas: <b>Collection</b> = paid members × monthly instalment &nbsp;·&nbsp; <b>Closing</b> = Opening + Total Collection − Chit Paid &nbsp;·&nbsp; next month's Opening = this Closing</span>
+        <span>Cash Count = notes counted at month end (tap Count) — ✓ means it matches the Closing balance. &nbsp;·&nbsp; Formulas: <b>Collection</b> = paid members × monthly instalment &nbsp;·&nbsp; <b>Closing</b> = Opening + Total Collection − Chit Paid &nbsp;·&nbsp; next month's Opening = this Closing</span>
       </div>
     </div>
   `;
@@ -1367,6 +1495,18 @@ function attachEvents(){
   document.getElementById('btnAddMember')?.addEventListener('click', ()=> addMember(ui.chitId));
   document.getElementById('btnAddExistingMember')?.addEventListener('click', ()=> openModal('addExisting', ui.chitId));
   document.getElementById('btnToggleMonths')?.addEventListener('click', ()=>{ ui.showAllMonths = !ui.showAllMonths; render(); });
+  document.querySelectorAll('[data-denom-open]').forEach(el=>{
+    el.addEventListener('click', ()=> openModal('denom', el.dataset.denomOpen, {monthKey: el.dataset.month}));
+  });
+  document.getElementById('btnExportDenom')?.addEventListener('click', ()=>{
+    const mk = ui.reportMonth; const r = denomReportData(mk);
+    const headers = ['Denomination', ...r.info.map(x=>x.chit.name), 'Total count', 'Total value'];
+    const rows = r.denomRows.map(row=>['Rs '+row.v, ...row.counts.map(n=>n===null?'':n), row.total, row.v*row.total]);
+    if(r.coinTotal>0) rows.push(['Coins', ...r.coinCells.map(n=>n===null?'':n), '', r.coinTotal]);
+    rows.push(['Cash counted', ...r.info.map(x=>x.counted===null?'':x.counted), '', r.countedTotal]);
+    rows.push(['Ledger closing', ...r.info.map(x=>x.closing), '', r.closingOfCounted]);
+    downloadCSV('denomination-'+mk, headers, rows);
+  });
   document.querySelectorAll('[data-markall-paid]').forEach(el=>{
     el.addEventListener('click', ()=>{
       const chit = state.chits.find(c=>c.id===el.dataset.chit);
@@ -1818,6 +1958,65 @@ function renderModal(){
       if(ids.length) addExistingMembersToChit(chit.id, ids);
       ui.modal=null;
       render();
+    };
+  }
+
+  if(ui.modal.type==='denom'){
+    const chit = state.chits.find(c=>c.id===ui.modal.chitId);
+    const mk = ui.modal.monthKey;
+    const row = chitLedger(chit).find(r=>r.monthKey===mk);
+    const closing = row ? Math.round(row.closing) : 0;
+    const saved = (chit.denoms && chit.denoms[mk]) || null;
+    const cur = saved || {};
+    const inputStyle = 'width:84px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;font-size:14px;';
+    const rowsHtml = DENOMS.map(v=>`
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="width:64px;font-weight:700;">₹${v}</span><span style="color:var(--ink-soft);">×</span>
+        <input type="number" min="0" inputmode="numeric" class="denomIn" data-v="${v}" value="${cur[v] ?? ''}" style="${inputStyle}"/>
+        <span class="num" data-sub="${v}" style="margin-left:auto;color:var(--ink-soft);">₹0</span>
+      </div>`).join('');
+    container.innerHTML = `
+      <div class="modal" style="max-height:90vh;overflow-y:auto;">
+        <h3>Closing Cash Count</h3>
+        <p style="font-size:12.5px;color:var(--ink-soft);margin-top:-6px;">${escapeHtml(chit.name)} — ${monthLabel(mk)}</p>
+        ${rowsHtml}
+        <div style="display:flex;align-items:center;gap:8px;margin:8px 0 12px;">
+          <span style="width:64px;font-weight:700;">Coins</span><span style="color:var(--ink-soft);">₹</span>
+          <input type="number" min="0" inputmode="numeric" class="denomIn" data-v="coins" value="${cur.coins ?? ''}" style="${inputStyle}"/>
+        </div>
+        <div style="border-top:1px solid var(--line);padding-top:10px;font-size:13.5px;">
+          <div style="display:flex;justify-content:space-between;"><span>Cash counted</span><b class="num" id="dnTotal">₹0</b></div>
+          <div style="display:flex;justify-content:space-between;margin-top:4px;"><span>Closing balance (ledger)</span><b class="num">${fmt(closing)}</b></div>
+          <div style="display:flex;justify-content:space-between;margin-top:4px;"><span>Difference</span><span id="dnDiff"></span></div>
+        </div>
+        <div class="modal-actions">
+          ${saved ? '<button class="btn danger" id="mClear">Clear</button>' : ''}
+          <button class="btn" id="mCancel">Cancel</button>
+          <button class="btn primary" id="mSave">Save</button>
+        </div>
+      </div>`;
+    document.body.appendChild(container);
+    const recompute = ()=>{
+      let total = 0;
+      document.querySelectorAll('.denomIn').forEach(inp=>{
+        const v = inp.dataset.v; const n = Number(inp.value)||0;
+        if(v==='coins'){ total += n; }
+        else { const sub = Number(v)*n; total += sub; const el = document.querySelector('[data-sub="'+v+'"]'); if(el) el.textContent = fmt(sub); }
+      });
+      document.getElementById('dnTotal').textContent = fmt(total);
+      const diff = total - closing;
+      document.getElementById('dnDiff').innerHTML = diff===0 ? '<span class="badge pos">Tally ✓</span>' : `<span class="badge neg">${diff>0?'+':''}${fmt(diff)}</span>`;
+    };
+    document.querySelectorAll('.denomIn').forEach(inp=>inp.addEventListener('input', recompute));
+    recompute();
+    document.getElementById('mCancel').onclick = closeModal;
+    document.getElementById('mClear')?.addEventListener('click', ()=>{ delete chit.denoms[mk]; scheduleSave(); ui.modal=null; render(); });
+    document.getElementById('mSave').onclick = ()=>{
+      const rec = {};
+      document.querySelectorAll('.denomIn').forEach(inp=>{ const n = Number(inp.value)||0; if(n>0) rec[inp.dataset.v] = n; });
+      if(!chit.denoms) chit.denoms = {};
+      chit.denoms[mk] = rec;
+      scheduleSave(); ui.modal=null; render();
     };
   }
 
