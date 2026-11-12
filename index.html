@@ -190,6 +190,7 @@
     background:#fff;font-size:12.5px;font-weight:600;white-space:nowrap;color:var(--ink);
   }
   .mobile-quicknav button.active{background:var(--maroon);color:#fff;border-color:var(--maroon);}
+  select.cell-input{border:1px solid var(--line);background:#fff;border-radius:6px;padding:5px 6px;font-size:12.5px;font-family:inherit;color:var(--ink);}
   .portal-nav{display:flex;gap:8px;overflow-x:auto;padding:10px;margin:0 0 14px;background:var(--gold-soft);border-radius:14px;position:sticky;top:6px;z-index:20;-webkit-overflow-scrolling:touch;}
   .portal-nav button{flex:0 0 auto;padding:8px 14px;border-radius:20px;border:1px solid var(--line);background:#fff;font-size:12.5px;font-weight:600;white-space:nowrap;color:var(--ink);}
   .portal-nav button.active{background:var(--maroon);color:#fff;border-color:var(--maroon);}
@@ -240,7 +241,7 @@ if(FIREBASE_CONFIGURED){
 
 /* ============================= STATE ============================= */
 let state = null;
-let ui = { view:'dashboard', chitId:null, modal:null, sidebarOpen:false, reportTab:'month', reportMonth:null, dashboardExpanded:false, showAllMonths:false, portalView:'dashboard' };
+let ui = { view:'dashboard', chitId:null, modal:null, sidebarOpen:false, reportTab:'month', reportMonth:null, dashboardExpanded:false, showAllMonths:false, portalView:'dashboard', refView:'dashboard', refShowAll:false };
 let saveTimer = null;
 
 function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2,9); }
@@ -258,7 +259,7 @@ function defaultState(){
       {id:uid('m'), sno:3, personId:pB.id, payments:{}, slots:[{id:uid('slot'), takenChitNo:2, chitTakenAmount:9100}]},
     ]
   };
-  return { people: [pOrganiser, pA, pB], chits: [chit], scheduleTemplates: {} };
+  return { people: [pOrganiser, pA, pB], chits: [chit], scheduleTemplates: {}, refs: [] };
 }
 
 function getOrCreatePerson(name){
@@ -358,9 +359,29 @@ function migrate(){
     if(p.refBy===undefined) p.refBy='';
     if(p.portalEmail===undefined) p.portalEmail='';
   });
+  // The Ref By list: every Ref used by any person is kept in state.refs (group admins log in as a Ref).
+  if(!Array.isArray(state.refs)) state.refs = [];
+  state.refs.forEach(r=>{ if(r.portalEmail===undefined) r.portalEmail=''; });
+  state.people.forEach(p=>{
+    const rv = (p.refBy||'').trim();
+    if(!rv) return;
+    let ref = state.refs.find(r=>r.name.toLowerCase()===rv.toLowerCase());
+    if(!ref){ ref = {id:uid('ref'), name:rv, portalEmail:''}; state.refs.push(ref); }
+    p.refBy = ref.name;
+  });
   (state.chits||[]).forEach(c=>{
     if(!c.payoutOverride) c.payoutOverride = {};
     if(!c.denoms) c.denoms = {};
+    if(!Array.isArray(c.removed)) c.removed = [];
+    // Older groups: the surplus "(temple)" / Kovil member is the organization seat (checked once).
+    if(!c.orgChecked){
+      c.orgChecked = true;
+      if(!c.members.some(m=>m.isOrg) && c.members.length > c.totalMembers){
+        const last = c.members.slice().sort((a,b)=>b.sno-a.sno)[0];
+        const pn = ((state.people.find(p=>p.id===last.personId))||{}).name || '';
+        if(/temple|kovil|கோவில்|கோயில்|organi/i.test(pn)) last.isOrg = true;
+      }
+    }
     if(!c.distributionSchedule) c.distributionSchedule = {};
     // Schedules are shared per chit value: lift any group-level schedule into the
     // shared template for its value, and drop group entries that just repeat it.
@@ -377,6 +398,7 @@ function migrate(){
     (c.members||[]).forEach(m=>{
       if(!m.payments) m.payments = {};
       if(!m.lateFor) m.lateFor = {};
+      if(!m.payModes) m.payModes = {};
       // Migrate old single-name field to the shared people directory.
       if(m.name!==undefined && !m.personId){
         m.personId = getOrCreatePerson(m.name);
@@ -402,6 +424,8 @@ function migrate(){
       }
     });
   });
+  // Drop unused "New Member N" placeholder people (left over from the old Add button).
+  state.people = state.people.filter(p=>!(isPlaceholder(p.name) && !p.portalEmail && !personInUse(p.id)));
 }
 
 /* ============================= DERIVED CALCULATIONS ============================= */
@@ -530,6 +554,126 @@ function denomReportData(mk){
   const closingOfCounted = counted.reduce((s,x)=>s+x.closing,0);
   return {info, denomRows, coinCells, coinTotal, countedTotal, closingOfCounted, anyCounted: counted.length>0};
 }
+// ---- Ref By list / group admins ----
+function findRefByPortalEmail(email){
+  if(!email) return null;
+  return (state.refs||[]).find(r=>r.portalEmail && r.portalEmail.toLowerCase()===email.toLowerCase()) || null;
+}
+// Every membership (in any chit group) whose person has this Ref.
+function refMemberRows(ref){
+  const rn = ref.name.trim().toLowerCase();
+  const out = [];
+  state.chits.forEach(c=>c.members.forEach(m=>{
+    const p = state.people.find(x=>x.id===m.personId);
+    if(p && (p.refBy||'').trim().toLowerCase()===rn) out.push({chit:c, member:m, person:p});
+  }));
+  return out;
+}
+function refOptionsHtml(selected){
+  const names = (state.refs||[]).map(r=>r.name);
+  if(selected && !names.some(n=>n===selected)) names.push(selected);
+  return '<option value="">— none —</option>' + names.map(n=>`<option value="${escapeAttr(n)}" ${n===selected?'selected':''}>${escapeHtml(n)}</option>`).join('');
+}
+// Previous 2 months + the current one (or the nearest 3 if the group is not running now).
+function visibleMonthKeys(months, showAll){
+  if(showAll || months.length<=3) return months;
+  const cur = currentMonthKey();
+  let ci = months.indexOf(cur);
+  if(ci===-1) ci = cur < months[0] ? 2 : months.length-1;
+  const s = Math.max(0, ci-2);
+  return months.slice(s, s+3);
+}
+// One payment cell (X / ! / L) with the Cash / UPI tag, shared by the admin and group-admin grids.
+function payCellHtml(chit, m, mk){
+  const st = m.payments[mk] || '';
+  const dispMap = {paid:'X', pending:'!', late:'L', '':'·'};
+  const cls = st || 'future';
+  const lateFor = (m.lateFor||{})[mk];
+  const mode = (st==='paid' || st==='late') ? ((m.payModes||{})[mk] || '') : '';
+  const modeTxt = mode==='upi' ? 'UPI' : mode==='cash' ? 'CASH' : '';
+  const tips = [];
+  if(st==='late' && lateFor) tips.push("Paid late — settles "+monthLabel(lateFor)+"'s due");
+  if(modeTxt) tips.push('Paid by '+(mode==='upi' ? 'UPI' : 'Cash'));
+  const title = tips.length ? ` title="${escapeAttr(tips.join(' · '))}"` : '';
+  const style = modeTxt ? ' style="flex-direction:column;line-height:1;gap:1px;"' : '';
+  return `<div class="pay-cell ${cls}" data-cell="1" data-chit="${chit.id}" data-member="${m.id}" data-month="${mk}"${title}${style}>${dispMap[st]||'·'}${modeTxt ? `<span style="font-size:7px;font-weight:700;">${modeTxt}</span>` : ''}</div>`;
+}
+// Point a member row at a different person; tidy up an unused "New Member N" placeholder person.
+function relinkMember(m, newPersonId){
+  const oldId = m.personId;
+  m.personId = newPersonId;
+  const stillUsed = state.chits.some(c=>c.members.some(x=>x.personId===oldId));
+  const old = state.people.find(p=>p.id===oldId);
+  if(!stillUsed && old && /^New Member \d+$/.test(old.name)){
+    state.people = state.people.filter(p=>p.id!==oldId);
+  }
+  scheduleSave(); render();
+}
+// ---- Kovil (organization) seat: takes chit no. 1 by default, pays no monthly instalment ----
+function setOrgSeat(chit, member, on){
+  member.isOrg = !!on;
+  if(on){
+    const hasOne = chit.members.some(x=>(x.slots||[]).some(s=>Number(s.takenChitNo)===1));
+    if(!hasOne){
+      if(!member.slots) member.slots = [];
+      member.slots.push({id:uid('slot'), takenChitNo:1, chitTakenAmount:scheduledAmount(chit,1)});
+    }
+  }
+}
+function addKovilSeat(chit){
+  if(chit.members.some(m=>m.isOrg)) return;
+  const personId = getOrCreatePerson('Kovil (Organization)');
+  const sno = chit.members.length ? Math.max(...chit.members.map(m=>m.sno))+1 : 1;
+  const member = {id:uid('m'), sno, personId, payments:{}, slots:[], lateFor:{}, payModes:{}, isOrg:true};
+  chit.members.push(member);
+  setOrgSeat(chit, member, true);
+}
+// ---- People clean-up: placeholders, duplicates, merge, delete ----
+function isPlaceholder(name){ return /^New Member \d+$/.test(name||''); }
+function personInUse(id){
+  return state.chits.some(c=>c.members.some(m=>m.personId===id) || (c.removed||[]).some(r=>r.personId===id));
+}
+function nameKey(name){ return (name||'').trim().toLowerCase(); }
+function duplicatePeopleGroups(){
+  const map = {};
+  state.people.forEach(p=>{ const k = nameKey(p.name); if(!k) return; (map[k] = map[k] || []).push(p); });
+  return Object.keys(map).filter(k=>map[k].length>1).map(k=>({key:k, people:map[k]}));
+}
+function mergePeople(keepId, dupId){
+  const keep = state.people.find(p=>p.id===keepId), dup = state.people.find(p=>p.id===dupId);
+  if(!keep || !dup || keepId===dupId) return;
+  state.chits.forEach(c=>{
+    const dm = c.members.find(m=>m.personId===dupId);
+    const km = c.members.find(m=>m.personId===keepId);
+    if(dm && km){
+      Object.keys(dm.payments||{}).forEach(mk=>{
+        if(!km.payments[mk]){
+          km.payments[mk] = dm.payments[mk];
+          if((dm.payModes||{})[mk]){ km.payModes = km.payModes||{}; km.payModes[mk] = dm.payModes[mk]; }
+          if((dm.lateFor||{})[mk]){ km.lateFor = km.lateFor||{}; km.lateFor[mk] = dm.lateFor[mk]; }
+        }
+      });
+      km.slots = (km.slots||[]).concat(dm.slots||[]);
+      if(!km.note && dm.note) km.note = dm.note;
+      if(dm.isOrg) km.isOrg = true;
+      c.members = c.members.filter(m=>m!==dm);
+    } else if(dm){
+      dm.personId = keepId;
+    }
+    (c.removed||[]).forEach(r=>{ if(r.personId===dupId) r.personId = keepId; });
+  });
+  if(!keep.refBy && dup.refBy) keep.refBy = dup.refBy;
+  if(!keep.portalEmail && dup.portalEmail) keep.portalEmail = dup.portalEmail;
+  state.people = state.people.filter(p=>p.id!==dupId);
+}
+// Deleting a person removes them from every group; each membership goes to that group's "Removed members" bin.
+function deletePerson(id){
+  state.chits.forEach(c=>{
+    const m = c.members.find(x=>x.personId===id);
+    if(m) archiveMember(c, m);
+  });
+  state.people = state.people.filter(p=>p.id!==id);
+}
 function chitLedger(chit){
   const rows = [];
   let opening = Number(chit.openingCarry)||0;
@@ -538,6 +682,7 @@ function chitLedger(chit){
     const mk = addMonths(chit.startMonth, i);
     let paid=0, late=0, pending=0;
     chit.members.forEach(m=>{
+      if(m.isOrg) return;
       const st = m.payments[mk];
       if(st==='paid') paid++;
       else if(st==='late') late++;
@@ -555,7 +700,17 @@ function chitLedger(chit){
 }
 
 /* ============================= RENDER ROOT ============================= */
+// Redraw without losing the reader's place (page scroll and sideways table scroll).
 function render(){
+  const keepSel = '.table-scroll, .portal-nav, .mobile-quicknav';
+  const y = window.scrollY;
+  const lefts = Array.from(document.querySelectorAll(keepSel)).map(el=>el.scrollLeft);
+  renderInner();
+  window.scrollTo(0, y);
+  Array.from(document.querySelectorAll(keepSel)).forEach((el,i)=>{ if(lefts[i]) el.scrollLeft = lefts[i]; });
+}
+function renderInner(){
+  document.querySelectorAll('.modal-backdrop').forEach(n=>n.remove());
   const app = document.getElementById('app');
 
   if(!FIREBASE_CONFIGURED){
@@ -580,6 +735,13 @@ function render(){
   if(memberPerson){
     app.innerHTML = renderMemberPortal(memberPerson);
     attachMemberPortalEvents();
+    return;
+  }
+  const refAdmin = findRefByPortalEmail(currentUser.email);
+  if(refAdmin){
+    app.innerHTML = renderRefPortal(refAdmin);
+    attachRefPortalEvents();
+    if(ui.modal) renderModal();
     return;
   }
 
@@ -718,42 +880,140 @@ function renderMain(){
 }
 
 /* ============================= PEOPLE (cross-chit view) ============================= */
+function renderRefManager(){
+  const refs = state.refs || [];
+  const rows = refs.map(r=>{
+    const count = state.people.filter(p=>(p.refBy||'').toLowerCase()===r.name.toLowerCase()).length;
+    return `<tr>
+      <td><b>${escapeHtml(r.name)}</b> ${r.portalEmail ? '<span class="badge pos">Group admin</span>' : ''}</td>
+      <td><input class="cell-input" type="email" data-ref-email="${r.id}" value="${escapeAttr(r.portalEmail||'')}" placeholder="group admin login email"/></td>
+      <td class="right num">${count}</td>
+      <td><button class="btn ghost small" data-ref-del="${r.id}" title="Remove this Ref">✕</button></td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="card">
+      <div class="toolbar"><h3 style="margin:0;">Ref By list</h3></div>
+      <div class="toolbar" style="margin-bottom:10px;">
+        <input id="refNewName" placeholder="New Ref name" style="flex:1;min-width:150px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;"/>
+        <button class="btn primary small" id="btnAddRef">+ Add Ref</button>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Ref</th><th>Group admin login email</th><th class="right">Members</th><th></th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="4" style="text-align:center;color:var(--ink-soft);padding:16px;">No Refs yet — add one above.</td></tr>`}</tbody>
+        </table>
+      </div>
+      <div class="legend"><span style="color:var(--ink-soft);">Every "Ref By" choice in the app comes from this list. Give a Ref a login email (and create the same email in Firebase Authentication) to make that person a group admin — they sign in to a portal that shows only the members whose Ref By is theirs.</span></div>
+    </div>`;
+}
+
+function renderCalcCheck(chit){
+  const payers = chit.members.filter(m=>!m.isOrg).length;
+  const hasOrg = chit.members.some(m=>m.isOrg);
+  const members = Number(chit.totalMembers)||0;
+  const months = Number(chit.durationMonths)||0;
+  const expected = members + 1;
+  const inst = monthlyAmount(chit);
+  const toCollect = inst * members * months;
+  let dist = 0, set = 0;
+  for(let no=1; no<=months; no++){ const v = scheduledAmount(chit, no); if(v!==null){ dist += v; set++; } }
+  const diff = toCollect - dist;
+  const warn = [];
+  if(months!==expected) warn.push('Duration is '+months+' months — '+members+' paying members plus the Kovil seat should run '+expected+' months.');
+  if(!hasOrg) warn.push('No Kovil seat in this group — tick "Kovil seat" on the organization row (it pays no monthly instalment).');
+  if(payers!==members) warn.push(payers+' paying members enrolled, '+members+' expected.');
+  if(set<months) warn.push((months-set)+' of '+months+' chit numbers have no distribution amount yet.');
+  const lastMonth = months>0 ? monthLabel(addMonths(chit.startMonth, months-1)) : '—';
+  const row = (a,b)=>`<tr><td>${a}</td><td class="right num">${b}</td></tr>`;
+  const balance = set<months ? '<span style="color:var(--ink-soft);">—</span>' : (diff===0 ? '<span class="badge pos">Balanced ✓</span>' : `<span class="badge ${diff<0?'neg':'pos'}">${diff>0?'+':''}${fmt(diff)}</span>`);
+  return `
+    <div class="card">
+      <h3>Chit calculation check</h3>
+      <div class="table-scroll"><table><tbody>
+        ${row('Paying members × instalment', payers+' × '+fmt(inst)+' = '+fmt(payers*inst)+' a month')}
+        ${row('Months ('+monthLabel(chit.startMonth)+' to '+lastMonth+')', months)}
+        ${row('Total to collect ('+members+' × '+fmt(inst)+' × '+months+')', fmt(toCollect))}
+        ${row('Total distribution ('+set+' of '+months+' chit nos set)', fmt(dist))}
+        ${row('<b>Balance (collect − distribute)</b>', balance)}
+      </tbody></table></div>
+      ${warn.length ? `<div style="margin-top:8px;font-size:12px;color:var(--red);line-height:1.5;">${warn.map(w=>'• '+escapeHtml(w)).join('<br>')}</div>` : ''}
+    </div>`;
+}
+
+function renderRemovedCard(chit){
+  const list = chit.removed || [];
+  if(!list.length) return '';
+  const rows = list.map(r=>{
+    const nos = (r.slots||[]).filter(s=>s.takenChitNo).map(s=>'No '+s.takenChitNo).join(', ');
+    return `<tr>
+      <td><b>${escapeHtml(r._name || personName(r.personId))}</b></td>
+      <td>${nos ? escapeHtml(nos) : '<span style="color:var(--ink-soft);">no chit no.</span>'}</td>
+      <td>${r._removedAt ? new Date(r._removedAt).toLocaleDateString('en-IN') : ''}</td>
+      <td style="white-space:nowrap;"><button class="btn small primary" data-restore="${r.id}" data-chit="${chit.id}">Restore</button> <button class="btn ghost small" data-purge="${r.id}" data-chit="${chit.id}" title="Delete forever">✕</button></td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="card">
+      <h3>Removed members (${list.length})</h3>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Name</th><th>Chit no.</th><th>Removed</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      <div class="legend"><span style="color:var(--ink-soft);">Restore brings back the same chit numbers, payment marks and notes. Adding the same person to this group again also restores them automatically.</span></div>
+    </div>`;
+}
+
+function renderCleanupCard(){
+  const placeholders = state.people.filter(p=>isPlaceholder(p.name) && !personInUse(p.id));
+  const stillUsed = state.people.filter(p=>isPlaceholder(p.name) && personInUse(p.id));
+  const dups = duplicatePeopleGroups();
+  if(!placeholders.length && !stillUsed.length && !dups.length) return '';
+  const dupRows = dups.map(g=>`<tr><td><b>${escapeHtml(g.people[0].name)}</b></td><td class="right num">${g.people.length}</td><td><button class="btn small primary" data-merge-dup="${escapeAttr(g.key)}">Merge into one</button></td></tr>`).join('');
+  return `
+    <div class="card">
+      <h3>Clean up</h3>
+      ${placeholders.length ? `<div class="toolbar"><span>${placeholders.length} unused "New Member" placeholder${placeholders.length>1?'s':''}</span><span style="flex:1;"></span><button class="btn small" id="btnPurgePlaceholders">Remove them</button></div>` : ''}
+      ${stillUsed.length ? `<p style="font-size:12.5px;color:var(--ink-soft);margin:6px 0;">${stillUsed.length} member row(s) are still named "New Member N" — pick the real person from the Name list on that group's page.</p>` : ''}
+      ${dups.length ? `<div class="table-scroll"><table><thead><tr><th>Same name</th><th class="right">Entries</th><th></th></tr></thead><tbody>${dupRows}</tbody></table></div>` : ''}
+    </div>`;
+}
+
 function renderPeople(){
-  if(state.people.length===0){
-    return `<div class="topbar"><div><h2>People</h2><div class="sub">Every person and every chit group they're part of</div></div></div>
-      <div class="empty-state"><div class="mark-big">&#3495;</div><p>No members added yet.</p></div>`;
-  }
-  const rows = state.people.map(p=>{
+  const people = state.people.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  const rows = people.map(p=>{
     let groups = [], slotCount=0, totalTaken=0, pendingMonths=0;
     state.chits.forEach(c=>{
       c.members.filter(m=>m.personId===p.id).forEach(m=>{
         groups.push(c.name);
         slotCount += (m.slots||[]).length;
         (m.slots||[]).forEach(s=>{ totalTaken += Number(s.chitTakenAmount)||0; });
-        pendingMonths += Object.values(m.payments||{}).filter(v=>v==='pending').length;
+        if(!m.isOrg) pendingMonths += Object.values(m.payments||{}).filter(v=>v==='pending').length;
       });
     });
-    if(groups.length===0) return '';
     return `<tr>
       <td><b>${escapeHtml(p.name)}</b> ${p.portalEmail ? `<span class="badge pos" title="Portal login enabled" style="margin-left:4px;">Portal</span>` : ''}</td>
-      <td><input class="cell-input" data-field="personRefBy" data-person="${p.id}" value="${escapeAttr(p.refBy||'')}" placeholder="Ref"/></td>
+      <td><select class="cell-input" data-field="personRefBy" data-person="${p.id}">${refOptionsHtml(p.refBy||'')}</select></td>
       <td><input class="cell-input" type="email" data-field="personPortalEmail" data-person="${p.id}" value="${escapeAttr(p.portalEmail||'')}" placeholder="member's login email"/></td>
-      <td>${groups.map(g=>`<span class="badge" style="background:var(--gold-soft);color:var(--maroon-dark);margin-right:4px;">${escapeHtml(g)}</span>`).join('')}</td>
+      <td>${groups.length ? groups.map(g=>`<span class="badge" style="background:var(--gold-soft);color:var(--maroon-dark);margin-right:4px;">${escapeHtml(g)}</span>`).join('') : '<span style="color:var(--ink-soft);font-size:12px;">not in any group</span>'}</td>
       <td class="right num">${slotCount}</td>
       <td class="right num">${fmt(totalTaken)}</td>
       <td class="right">${pendingMonths>0?`<span class="badge neg">${pendingMonths}</span>`:'0'}</td>
+      <td style="white-space:nowrap;"><button class="btn ghost small" data-person-edit="${p.id}" title="Edit">✎</button><button class="btn ghost small" data-person-del="${p.id}" title="Delete">✕</button></td>
     </tr>`;
   }).join('');
   return `
-    <div class="topbar"><div><h2>People</h2><div class="sub">Members are shared across chit groups — the same person can hold a spot in more than one group, and Ref By is set once here for all of them</div></div></div>
+    <div class="topbar"><div><h2>People</h2><div class="sub">Add, edit or delete people here. A person can be in several chit groups; Ref By is set once for all of them.</div></div><button class="btn primary small" id="btnAddPerson">+ Add Person</button></div>
+    ${renderRefManager()}
+    ${renderCleanupCard()}
     <div class="card">
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Name</th><th>Ref By</th><th>Portal Login Email</th><th>Chit Groups</th><th class="right">Chit Slots</th><th class="right">Total Taken (₹)</th><th class="right">Unpaid Months</th></tr></thead>
-          <tbody>${rows || `<tr><td colspan="7" style="text-align:center;color:var(--ink-soft);padding:20px;">Not linked to any chit group yet.</td></tr>`}</tbody>
+          <thead><tr><th>Name</th><th>Ref By</th><th>Portal Login Email</th><th>Chit Groups</th><th class="right">Chit Slots</th><th class="right">Total Taken (₹)</th><th class="right">Unpaid Months</th><th></th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:var(--ink-soft);padding:20px;">No people yet — tap + Add Person.</td></tr>`}</tbody>
         </table>
       </div>
-      <div class="legend"><span style="color:var(--ink-soft);">Set a "Portal Login Email" to give that person their own read-only sign-in — create the matching email/password for them in Firebase Authentication first, same way as the 5 admin logins, then paste the same email here.</span></div>
+      <div class="legend"><span style="color:var(--ink-soft);">Every change here asks you to confirm first. Deleting a person removes them from all groups, but each group keeps them under "Removed members" so you can restore them. A "Portal Login Email" gives that person a read-only sign-in — create the same email in Firebase Authentication.</span></div>
     </div>
   `;
 }
@@ -957,6 +1217,194 @@ const REPORT_TABS = [
   {id:'denom', label:'Denomination'},
 ];
 
+/* ============================= GROUP ADMIN (Ref) PORTAL ============================= */
+function renderRefPortal(ref){
+  const rows = refMemberRows(ref);
+  const groups = [];
+  rows.forEach(r=>{
+    let g = groups.find(x=>x.chit.id===r.chit.id);
+    if(!g){ g = {chit:r.chit, items:[]}; groups.push(g); }
+    g.items.push(r);
+  });
+  let view = ui.refView;
+  if(view!=='dashboard' && !groups.some(g=>g.chit.id===view)) view = 'dashboard';
+
+  const curKey = currentMonthKey();
+  const monthMap = {};
+  const add = (mk,k,v)=>{ const o = monthMap[mk] || (monthMap[mk] = {received:0,late:0,pending:0,cash:0,upi:0,chitPaid:0}); o[k] += v; };
+  let pendingTotal = 0, pendingCount = 0;
+  const taken = [], notTaken = [];
+  rows.forEach(({chit, member, person})=>{
+    const mAmt = monthlyAmount(chit);
+    if(!member.isOrg){
+      Object.keys(member.payments||{}).forEach(mk=>{
+        const st = member.payments[mk];
+        if(st==='paid' || st==='late'){
+          add(mk,'received',mAmt);
+          if(st==='late') add(mk,'late',mAmt);
+          const mode = (member.payModes||{})[mk];
+          if(mode==='cash') add(mk,'cash',mAmt); else if(mode==='upi') add(mk,'upi',mAmt);
+        } else if(st==='pending'){
+          add(mk,'pending',mAmt); pendingTotal += mAmt; pendingCount++;
+        }
+      });
+    }
+    const won = (member.slots||[]).filter(s=>s.takenChitNo);
+    if(won.length===0) notTaken.push({chit, member, person});
+    won.forEach(s=>{
+      const mk = addMonths(chit.startMonth, Number(s.takenChitNo)-1);
+      const amount = Number(s.chitTakenAmount) || payoutForMonth(chit, Number(s.takenChitNo)-1, mk);
+      taken.push({chit, member, person, slot:s, mk, amount});
+      if(s.payoutStatus==='paid') add(mk,'chitPaid',amount);
+    });
+  });
+  taken.sort((a,b)=> a.chit.name.localeCompare(b.chit.name) || Number(a.slot.takenChitNo)-Number(b.slot.takenChitNo));
+  const peopleCount = new Set(rows.map(r=>r.person.id)).size;
+
+  const pills = `<div class="portal-nav">
+      <button class="${view==='dashboard'?'active':''}" data-ref-view="dashboard">Dashboard</button>
+      ${groups.map(g=>`<button class="${view===g.chit.id?'active':''}" data-ref-view="${g.chit.id}">${escapeHtml(g.chit.name)}</button>`).join('')}
+    </div>`;
+  const dash = n => n ? fmt(n) : '<span style="color:var(--ink-soft);">—</span>';
+  const toggleBtn = `<button class="btn ghost small" data-ref-toggle="1">${ui.refShowAll ? 'Show recent 3 months' : 'Show all months'}</button>`;
+
+  let bodyHtml;
+  if(view==='dashboard'){
+    const thisMonth = monthMap[curKey] || {received:0};
+    const window3 = [addMonths(curKey,-2), addMonths(curKey,-1), curKey];
+    const monthKeys = ui.refShowAll ? Array.from(new Set([...Object.keys(monthMap), ...window3])).sort() : window3;
+    const monthRows = monthKeys.map(mk=>{
+      const o = monthMap[mk] || {received:0,late:0,pending:0,cash:0,upi:0,chitPaid:0};
+      return `<tr><td>${monthLabel(mk)}</td>
+        <td class="right num" style="font-weight:600;">${dash(o.received)}</td>
+        <td class="right num">${dash(o.late)}</td>
+        <td class="right num" style="${o.pending?'color:var(--red);font-weight:600;':''}">${dash(o.pending)}</td>
+        <td class="right num">${dash(o.cash)}</td>
+        <td class="right num">${dash(o.upi)}</td>
+        <td class="right num">${dash(o.chitPaid)}</td></tr>`;
+    }).join('');
+    const takenRows = taken.map(t=>{
+      const paid = t.slot.payoutStatus==='paid';
+      const modeTxt = t.slot.payoutMode==='upi' ? 'UPI' : t.slot.payoutMode==='cash' ? 'Cash' : '';
+      return `<tr>
+        <td><b>${escapeHtml(t.person.name)}</b>${t.member.isOrg ? ' <span class="badge">Kovil</span>' : ''}</td>
+        <td>${escapeHtml(t.chit.name)}</td>
+        <td class="right num">${t.slot.takenChitNo}</td>
+        <td>${monthLabel(t.mk)}</td>
+        <td class="right num">${fmt(t.amount)}</td>
+        <td><button class="btn ghost small" data-payout="1" data-chit="${t.chit.id}" data-member="${t.member.id}" data-slot="${t.slot.id}">${paid ? `<span class="badge pos">Paid${modeTxt ? ' · '+modeTxt : ''}</span>` : '<span class="badge neg">Not paid</span>'}</button></td>
+      </tr>`;
+    }).join('');
+    const notTakenRows = notTaken.map(t=>{
+      const unpaid = t.member.isOrg ? 0 : Object.values(t.member.payments||{}).filter(v=>v==='pending').length;
+      return `<tr><td><b>${escapeHtml(t.person.name)}</b></td><td>${escapeHtml(t.chit.name)}</td><td class="right">${unpaid>0?`<span class="badge neg">${unpaid}</span>`:'0'}</td></tr>`;
+    }).join('');
+    bodyHtml = `
+      <div class="stat-row">
+        <div class="stat"><div class="label">My Members</div><div class="value">${peopleCount}</div></div>
+        <div class="stat"><div class="label">Received This Month</div><div class="value">${fmt(thisMonth.received)}</div></div>
+        <div class="stat"><div class="label">Pending Dues</div><div class="value ${pendingTotal>0?'neg':'pos'}">${fmt(pendingTotal)}</div>${pendingCount>0 ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${pendingCount} unpaid month${pendingCount>1?'s':''}</div>` : ''}</div>
+        <div class="stat"><div class="label">Chits Taken</div><div class="value">${taken.length}</div></div>
+      </div>
+      <div class="card">
+        <div class="toolbar"><h3 style="margin:0;">Month-wise collection</h3><span style="flex:1;"></span>${toggleBtn}</div>
+        <div class="table-scroll"><table>
+          <thead><tr><th>Month</th><th class="right">Received</th><th class="right">Late paid</th><th class="right">Pending</th><th class="right">Cash</th><th class="right">UPI</th><th class="right">Chit paid out</th></tr></thead>
+          <tbody>${monthRows}</tbody>
+        </table></div>
+        <div class="legend"><span style="color:var(--ink-soft);">Built automatically from the payment marks in your group pages. Received includes late payments; Cash / UPI come from how each payment was recorded.</span></div>
+      </div>
+      <div class="card">
+        <h3>Chit taken (${taken.length})</h3>
+        <div class="table-scroll"><table>
+          <thead><tr><th>Member</th><th>Group</th><th class="right">Chit no.</th><th>Month</th><th class="right">Amount</th><th>Payout</th></tr></thead>
+          <tbody>${takenRows || `<tr><td colspan="6" style="text-align:center;color:var(--ink-soft);padding:16px;">No chit taken yet.</td></tr>`}</tbody>
+        </table></div>
+        <div class="legend"><span style="color:var(--ink-soft);">Tap the Payout status to record that the chit money was paid — by Cash or UPI.</span></div>
+      </div>
+      <div class="card">
+        <h3>Chit not taken (${notTaken.length})</h3>
+        <div class="table-scroll"><table>
+          <thead><tr><th>Member</th><th>Group</th><th class="right">Unpaid months</th></tr></thead>
+          <tbody>${notTakenRows || `<tr><td colspan="3" style="text-align:center;color:var(--ink-soft);padding:16px;">Everyone has taken a chit.</td></tr>`}</tbody>
+        </table></div>
+      </div>`;
+  } else {
+    const g = groups.find(x=>x.chit.id===view);
+    const months = [];
+    for(let i=0;i<g.chit.durationMonths;i++) months.push(addMonths(g.chit.startMonth, i));
+    const vis = visibleMonthKeys(months, ui.refShowAll);
+    const head = vis.map(mk=>`<th class="right">${monthLabel(mk)}<br><button class="btn ghost small" style="padding:1px 6px;font-size:10.5px;" data-ref-markall="${g.chit.id}" data-month="${mk}">✓ All</button></th>`).join('');
+    const body = g.items.slice().sort((a,b)=>(a.member.isOrg?1:0)-(b.member.isOrg?1:0) || a.person.name.localeCompare(b.person.name)).map(({member, person})=>{
+      const chips = (member.slots||[]).filter(s=>s.takenChitNo).map(s=>`<span class="badge" style="background:var(--gold-soft);color:var(--ink);margin:0 4px 4px 0;">No ${s.takenChitNo}</span>`).join('') || '<span style="color:var(--ink-soft);font-size:11.5px;">Not taken</span>';
+      const cells = member.isOrg
+        ? `<td colspan="${vis.length}" style="color:var(--ink-soft);font-size:12px;white-space:normal;min-width:150px;">Kovil seat — no monthly payment</td>`
+        : vis.map(mk=>`<td>${payCellHtml(g.chit, member, mk)}</td>`).join('');
+      return `<tr>
+        <td style="min-width:130px;"><b>${escapeHtml(person.name)}</b></td>
+        <td style="min-width:90px;">${chips}</td>
+        ${cells}
+        <td style="min-width:140px;"><input class="cell-input" data-ref-note="1" data-chit="${g.chit.id}" data-member="${member.id}" value="${escapeAttr(member.note||'')}" placeholder="Note"/></td>
+      </tr>`;
+    }).join('');
+    bodyHtml = `
+      <div class="card">
+        <div class="toolbar"><h3 style="margin:0;">${escapeHtml(g.chit.name)}</h3><span style="flex:1;"></span>${months.length>3 ? toggleBtn : ''}</div>
+        <div class="table-scroll"><table>
+          <thead><tr><th>Member</th><th>Chit</th>${head}<th>Note</th></tr></thead>
+          <tbody>${body}</tbody>
+        </table></div>
+        <div class="legend"><span style="color:var(--ink-soft);">Tap a blank cell to mark it Paid; tap a marked cell to change it, clear it, or record Cash / UPI. "✓ All" marks all your members paid for that month.</span></div>
+      </div>`;
+  }
+
+  return `
+    <div style="max-width:900px;width:100%;margin:0 auto;padding:20px 16px 60px;">
+      <div class="topbar">
+        <div><h2>Group Admin</h2><div class="sub">${escapeHtml(ref.name)} — ${peopleCount} member${peopleCount===1?'':'s'} in ${groups.length} chit group${groups.length===1?'':'s'}</div></div>
+        <button class="btn" id="btnRefSignOut">Sign Out</button>
+      </div>
+      ${pills}
+      ${groups.length ? bodyHtml : `<div class="empty-state"><div class="mark-big">&#3495;</div><p>No members are assigned to you yet.</p></div>`}
+    </div>`;
+}
+
+function attachRefPortalEvents(){
+  document.getElementById('btnRefSignOut')?.addEventListener('click', ()=> signOut(auth));
+  document.querySelectorAll('[data-ref-view]').forEach(el=>{
+    el.addEventListener('click', ()=>{ ui.refView = el.dataset.refView; render(); window.scrollTo(0,0); });
+  });
+  document.querySelectorAll('[data-ref-toggle]').forEach(el=>{
+    el.addEventListener('click', ()=>{ ui.refShowAll = !ui.refShowAll; render(); });
+  });
+  document.querySelectorAll('[data-cell]').forEach(el=>{
+    el.addEventListener('click', ()=> cyclePayment(el.dataset.chit, el.dataset.member, el.dataset.month));
+  });
+  document.querySelectorAll('[data-ref-note]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      const chit = state.chits.find(c=>c.id===el.dataset.chit);
+      const m = chit && chit.members.find(x=>x.id===el.dataset.member);
+      if(m){ m.note = el.value; scheduleSave(); }
+    });
+  });
+  document.querySelectorAll('[data-payout]').forEach(el=>{
+    el.addEventListener('click', ()=> openModal('payoutStatus', el.dataset.chit, {memberId:el.dataset.member, slotId:el.dataset.slot}));
+  });
+  document.querySelectorAll('[data-ref-markall]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const ref = findRefByPortalEmail(currentUser.email);
+      if(!ref) return;
+      const chitId = el.dataset.refMarkall, mk = el.dataset.month;
+      const targets = refMemberRows(ref).filter(r=>r.chit.id===chitId && !r.member.isOrg && r.member.payments[mk]!=='paid' && r.member.payments[mk]!=='late').map(r=>r.member);
+      if(!targets.length){ notify('Everyone of yours is already marked paid (or late-paid) for '+monthLabel(mk)+'.'); return; }
+      askConfirm('Mark '+targets.length+' of your member(s) as Paid for '+monthLabel(mk)+'?', ()=>{
+        targets.forEach(m=>{ m.payments[mk] = 'paid'; });
+        scheduleSave();
+      }, 'Mark paid');
+    });
+  });
+}
+
 function renderReports(){
   if(state.chits.length===0){
     return `<div class="topbar"><div><h2>Reports</h2></div></div>
@@ -1011,6 +1459,7 @@ function renderReportMonth(){
       <td class="right num" style="font-weight:700;">${fmt(row.closing)}</td>
     </tr>`);
     c.members.forEach(m=>{
+      if(m.isOrg) return;
       const st = m.payments[mk];
       if(!st) return;
       paymentRows.push({group:c.name, name:personName(m.personId), refBy:personRefBy(m.personId), status:st, amount:monthlyAmount(c)});
@@ -1092,6 +1541,7 @@ function renderReportPending(){
   state.chits.forEach(c=>{
     const mAmt = monthlyAmount(c);
     c.members.forEach(m=>{
+      if(m.isOrg) return;
       Object.keys(m.payments||{}).forEach(mk=>{
         if(m.payments[mk]==='pending'){
           items.push({group:c.name, name:personName(m.personId), refBy:personRefBy(m.personId), month:mk, amount:mAmt});
@@ -1346,17 +1796,14 @@ function renderChitView(chit){
 
   // Members grid
   const headerMonths = visibleMonths.map(mk=>`<th class="right">${monthLabel(mk)}<br><button class="btn ghost small" style="padding:1px 6px;font-size:10.5px;" data-markall-paid="1" data-chit="${chit.id}" data-month="${mk}">✓ All</button></th>`).join('');
-  const peopleDatalist = `<datalist id="peopleList">${state.people.map(p=>`<option value="${escapeAttr(p.name)}">`).join('')}</datalist>`;
-  const memberRows = chit.members.map(m=>{
-    const cells = visibleMonths.map((mk,i)=>{
-      const st = m.payments[mk] || '';
-      const dispMap = {paid:'X', pending:'!', late:'L', '':'·'};
-      const cls = st || 'future';
-      const lateFor = (m.lateFor||{})[mk];
-      const title = st==='late' && lateFor ? ` title="Paid late — settles ${monthLabel(lateFor)}'s due"` : '';
-      return `<td><div class="pay-cell ${cls}" data-cell="1" data-chit="${chit.id}" data-member="${m.id}" data-month="${mk}"${title}>${dispMap[st]||'·'}</div></td>`;
-    }).join('');
-    const pendingCount = months.filter(mk=>m.payments[mk]==='pending').length;
+  const sortedPeople = state.people.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  const takenPersonIds = new Set(chit.members.map(x=>x.personId));
+  const orderedMembers = chit.members.slice().sort((a,b)=>(a.isOrg?1:0)-(b.isOrg?1:0) || a.sno-b.sno);
+  const memberRows = orderedMembers.map((m,rowIdx)=>{
+    const cells = m.isOrg
+      ? `<td colspan="${visibleMonths.length}" style="color:var(--ink-soft);font-size:12px;white-space:normal;min-width:170px;">Kovil seat — chit distribution only, no monthly payment</td>`
+      : visibleMonths.map(mk=>`<td>${payCellHtml(chit, m, mk)}</td>`).join('');
+    const pendingCount = m.isOrg ? 0 : months.filter(mk=>m.payments[mk]==='pending').length;
     const slotsHtml = (m.slots||[]).map(s=>`
       <div style="display:flex;gap:4px;align-items:center;margin-bottom:2px;">
         <input class="cell-input num" style="width:34px;background:#F3F5F4;" type="number" placeholder="No"
@@ -1369,11 +1816,15 @@ function renderChitView(chit){
     return `<tr>
       <td class="sticky-col" style="background:#fff;">
         <div class="name-cell">
-          <b class="num">#${m.sno}</b>
+          <b class="num">#${rowIdx+1}</b>
         </div>
       </td>
-      <td><input class="cell-input" data-field="personRefBy" data-person="${m.personId}" value="${escapeAttr(personRefBy(m.personId))}" placeholder="Ref"/></td>
-      <td style="min-width:170px;"><input class="cell-input" list="peopleList" data-field="name" data-chit="${chit.id}" data-member="${m.id}" value="${escapeAttr(personName(m.personId))}" placeholder="Member name"/></td>
+      <td><select class="cell-input" data-field="personRefBy" data-person="${m.personId}" style="max-width:96px;">${refOptionsHtml(personRefBy(m.personId))}</select></td>
+      <td style="min-width:215px;white-space:nowrap;">
+        <select class="cell-input" data-field="memberPerson" data-chit="${chit.id}" data-member="${m.id}" style="max-width:175px;">${sortedPeople.map(p=>`<option value="${p.id}" ${p.id===m.personId?'selected':''} ${(takenPersonIds.has(p.id) && p.id!==m.personId)?'disabled':''}>${escapeHtml(p.name)}</option>`).join('')}</select>
+        <button class="btn ghost small" style="padding:2px 6px;" data-rename-person="${m.personId}" title="Rename this person">✎</button>
+        <label style="display:block;font-size:10.5px;color:var(--ink-soft);margin-top:3px;white-space:normal;"><input type="checkbox" data-org-toggle="1" data-chit="${chit.id}" data-member="${m.id}" ${m.isOrg?'checked':''}/> Kovil seat (no monthly payment)</label>
+      </td>
       <td style="min-width:130px;">
         ${slotsHtml}
         <button class="btn ghost small" style="padding:2px 6px;" data-add-slot="1" data-chit="${chit.id}" data-member="${m.id}">+ chit no</button>
@@ -1425,10 +1876,12 @@ function renderChitView(chit){
 
     <div class="stat-row">
       <div class="stat"><div class="label">Monthly Instalment</div><div class="value">${fmt(mAmt)}</div></div>
-      <div class="stat"><div class="label">Members Enrolled</div><div class="value">${chit.members.length}/${chit.totalMembers}</div></div>
+      <div class="stat"><div class="label">Members Enrolled</div><div class="value">${chit.members.filter(m=>!m.isOrg).length}/${chit.totalMembers}</div>${chit.members.some(m=>m.isOrg) ? '<div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">+ Kovil seat</div>' : ''}</div>
       <div class="stat"><div class="label">Current Closing Balance</div><div class="value ${last&&last.closing<0?'neg':'pos'}">${last?fmt(last.closing):'₹0'}</div></div>
       <div class="stat"><div class="label">Outstanding Dues</div><div class="value ${totalOutstanding>0?'neg':''}">${fmt(totalOutstanding)}</div></div>
     </div>
+
+    ${renderCalcCheck(chit)}
 
     <div class="card">
       <div class="toolbar">
@@ -1449,7 +1902,6 @@ function renderChitView(chit){
         <button class="btn primary small" id="btnAddMember">+ New Member</button>
       </div>
       <div class="table-scroll">
-        ${peopleDatalist}
         <table>
           <thead><tr>
             <th class="sticky-col">S/No</th><th>Ref By</th><th>Name</th><th>Chit Slot(s)</th><th class="right">Unpaid</th>
@@ -1463,9 +1915,11 @@ function renderChitView(chit){
         <span><i style="background:var(--red-soft);border:1px solid #F7C9C6;"></i>Pending / unpaid (!)</span>
         <span><i style="background:var(--blue-soft);border:1px solid #C7DEFB;"></i>Old due collected late (L)</span>
         <span><i style="background:transparent;border:1px dashed #D8DEDC;"></i>Not due yet</span>
-        <span style="color:var(--ink-soft);">Click a cell to cycle status — marking "Late" will ask which month's due it settles · Ref By is shared per person across every group · type a name that already exists to link the same person · "+ chit no" lets one member hold more than one number in the same group</span>
+        <span style="color:var(--ink-soft);">Tap a blank cell to mark it Paid; tap a marked cell to change it (Paid / Pending / Paid late) or clear it · Ref By is shared per person across every group · pick the person from the Name list to link the same person · "+ chit no" lets one member hold more than one number in the same group</span>
       </div>
     </div>
+
+    ${renderRemovedCard(chit)}
 
     <div class="card">
       <h3>Group Ledger (auto-calculated)</h3>
@@ -1492,8 +1946,107 @@ function attachEvents(){
   document.getElementById('btnNewChit')?.addEventListener('click', ()=> openModal('newChit'));
   document.getElementById('btnToggleDashboardHistory')?.addEventListener('click', ()=>{ ui.dashboardExpanded = !ui.dashboardExpanded; render(); });
   document.getElementById('btnNewChitQuick')?.addEventListener('click', ()=> openModal('newChit'));
-  document.getElementById('btnAddMember')?.addEventListener('click', ()=> addMember(ui.chitId));
+  document.getElementById('btnAddMember')?.addEventListener('click', ()=> openModal('addMember', ui.chitId));
   document.getElementById('btnAddExistingMember')?.addEventListener('click', ()=> openModal('addExisting', ui.chitId));
+  document.querySelectorAll('[data-rename-person]').forEach(el=>{
+    el.addEventListener('click', ()=> openModal('renamePerson', null, {personId: el.dataset.renamePerson}));
+  });
+  document.querySelectorAll('[data-org-toggle]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      const chit = state.chits.find(c=>c.id===el.dataset.chit);
+      const m = chit && chit.members.find(x=>x.id===el.dataset.member);
+      if(!m) return;
+      const on = el.checked;
+      confirmChange(on ? 'Make this the Kovil (organization) seat?' : 'Make this a normal paying member?', personName(m.personId),
+        on ? 'Kovil seat — no monthly payment, chit distribution only (chit no. 1 by default)' : 'pays the monthly instalment',
+        ()=>{ if(on) setOrgSeat(chit, m, true); else m.isOrg = false; });
+    });
+  });
+  document.querySelectorAll('[data-restore]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const chit = state.chits.find(c=>c.id===el.dataset.chit);
+      if(!chit) return;
+      restoreMember(chit, el.dataset.restore);
+      scheduleSave(); render();
+    });
+  });
+  document.querySelectorAll('[data-purge]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const chit = state.chits.find(c=>c.id===el.dataset.chit);
+      const rec = chit && (chit.removed||[]).find(r=>r.id===el.dataset.purge);
+      if(!rec) return;
+      askConfirm('Delete '+(rec._name || 'this member')+' forever from the removed list?\n\nTheir chit numbers and payment marks will be lost.', ()=>{
+        chit.removed = chit.removed.filter(r=>r.id!==rec.id);
+        scheduleSave();
+      }, 'Delete forever');
+    });
+  });
+  document.getElementById('btnAddPerson')?.addEventListener('click', ()=> openModal('personEdit', null, {personId:null}));
+  document.querySelectorAll('[data-person-edit]').forEach(el=>{
+    el.addEventListener('click', ()=> openModal('personEdit', null, {personId: el.dataset.personEdit}));
+  });
+  document.querySelectorAll('[data-person-del]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const p = state.people.find(x=>x.id===el.dataset.personDel);
+      if(!p) return;
+      const inGroups = state.chits.filter(c=>c.members.some(m=>m.personId===p.id));
+      askConfirm('Delete '+p.name+'?'+(inGroups.length ? '\n\nThey will be removed from: '+inGroups.map(c=>c.name).join(', ')+'.\nEach group keeps them under "Removed members", so you can restore them.' : ''), ()=>{
+        deletePerson(p.id);
+        scheduleSave();
+      }, 'Delete person');
+    });
+  });
+  document.getElementById('btnPurgePlaceholders')?.addEventListener('click', ()=>{
+    const unused = state.people.filter(p=>isPlaceholder(p.name) && !personInUse(p.id));
+    if(!unused.length) return;
+    askConfirm('Remove '+unused.length+' unused "New Member" placeholder(s)?', ()=>{
+      state.people = state.people.filter(p=>!(isPlaceholder(p.name) && !personInUse(p.id)));
+      scheduleSave();
+    }, 'Remove placeholders');
+  });
+  document.querySelectorAll('[data-merge-dup]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const grp = duplicatePeopleGroups().find(g=>g.key===el.dataset.mergeDup);
+      if(!grp) return;
+      const score = p => state.chits.reduce((n,c)=>n+(c.members.some(m=>m.personId===p.id)?2:0),0) + (p.portalEmail?1:0) + (p.refBy?1:0);
+      const sorted = grp.people.slice().sort((a,b)=>score(b)-score(a));
+      const keep = sorted[0], dups = sorted.slice(1);
+      askConfirm('Merge '+grp.people.length+' entries named "'+keep.name+'" into one?\n\nTheir chit numbers, payments and notes are combined.', ()=>{
+        dups.forEach(d=>mergePeople(keep.id, d.id));
+        scheduleSave();
+      }, 'Merge');
+    });
+  });
+  document.getElementById('btnAddRef')?.addEventListener('click', ()=>{
+    const name = (document.getElementById('refNewName').value||'').trim();
+    if(!name) return;
+    if(!state.refs) state.refs = [];
+    if(state.refs.some(r=>r.name.toLowerCase()===name.toLowerCase())){ notify('"'+name+'" is already in the Ref list.'); return; }
+    state.refs.push({id:uid('ref'), name, portalEmail:''});
+    scheduleSave(); render();
+  });
+  document.querySelectorAll('[data-ref-email]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      const r = (state.refs||[]).find(x=>x.id===el.dataset.refEmail);
+      if(!r) return;
+      const email = el.value.trim(), ov = r.portalEmail||'';
+      if(email===ov) return;
+      if(email && emailInUse(email, {refId:r.id})){ notify('That email is already used by another portal login — each login must be unique.'); return; }
+      confirmChange('Change the group admin login for '+r.name+'?', ov||'none', email||'none', ()=>{ r.portalEmail = email; });
+    });
+  });
+  document.querySelectorAll('[data-ref-del]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const r = (state.refs||[]).find(x=>x.id===el.dataset.refDel);
+      if(!r) return;
+      const cnt = state.people.filter(p=>(p.refBy||'').toLowerCase()===r.name.toLowerCase()).length;
+      askConfirm('Remove "'+r.name+'" from the Ref list?'+(cnt ? '\n\n'+cnt+' member(s) using this Ref will be set to "none".' : ''), ()=>{
+        state.people.forEach(p=>{ if((p.refBy||'').toLowerCase()===r.name.toLowerCase()) p.refBy=''; });
+        state.refs = state.refs.filter(x=>x.id!==r.id);
+        scheduleSave();
+      }, 'Remove Ref');
+    });
+  });
   document.getElementById('btnToggleMonths')?.addEventListener('click', ()=>{ ui.showAllMonths = !ui.showAllMonths; render(); });
   document.querySelectorAll('[data-denom-open]').forEach(el=>{
     el.addEventListener('click', ()=> openModal('denom', el.dataset.denomOpen, {monthKey: el.dataset.month}));
@@ -1513,18 +2066,19 @@ function attachEvents(){
       if(!chit) return;
       const mk = el.dataset.month;
       // Everyone not already Paid or Late-paid (late entries carry their own settled-month note).
-      const targets = chit.members.filter(m=>m.payments[mk]!=='paid' && m.payments[mk]!=='late');
+      const targets = chit.members.filter(m=>!m.isOrg && m.payments[mk]!=='paid' && m.payments[mk]!=='late');
       if(!targets.length){ alert('Everyone is already marked paid (or late-paid) for '+monthLabel(mk)+'.'); return; }
       const pend = targets.filter(m=>m.payments[mk]==='pending').length;
-      if(!confirm('Mark '+targets.length+' member(s) as Paid for '+monthLabel(mk)+'?'+(pend ? '\n\n'+pend+' of them are currently marked pending.' : ''))) return;
-      targets.forEach(m=>{ m.payments[mk] = 'paid'; });
-      scheduleSave(); render();
+      askConfirm('Mark '+targets.length+' member(s) as Paid for '+monthLabel(mk)+'?'+(pend ? '\n\n'+pend+' of them are currently marked pending.' : ''), ()=>{
+        targets.forEach(m=>{ m.payments[mk] = 'paid'; });
+        scheduleSave();
+      }, 'Mark paid');
     });
   });
 
   document.querySelectorAll('[data-nav]').forEach(el=>{
     el.addEventListener('click', ()=>{
-      ui.view = el.dataset.nav; ui.chitId = el.dataset.id || null; ui.sidebarOpen=false; render();
+      ui.view = el.dataset.nav; ui.chitId = el.dataset.id || null; ui.sidebarOpen=false; render(); window.scrollTo(0,0);
     });
   });
 
@@ -1540,43 +2094,52 @@ function attachEvents(){
 
       if(field==='personRefBy'){
         const p = state.people.find(x=>x.id===personId);
-        if(p){ p.refBy = el.value; scheduleSave(); }
+        if(!p) return;
+        const nv = el.value, ov = p.refBy||'';
+        if(nv===ov) return;
+        confirmChange('Change Ref By for '+p.name+'?', ov||'none', nv||'none', ()=>{ p.refBy = nv; });
         return;
       }
       if(field==='personPortalEmail'){
         const p = state.people.find(x=>x.id===personId);
-        if(p){
-          const email = el.value.trim();
-          const clash = email && state.people.some(x=>x.id!==p.id && x.portalEmail && x.portalEmail.toLowerCase()===email.toLowerCase());
-          if(clash){ alert('That email is already linked to another person — each portal login must be unique.'); render(); return; }
-          p.portalEmail = email;
-          scheduleSave();
-        }
+        if(!p) return;
+        const email = el.value.trim(), ov = p.portalEmail||'';
+        if(email===ov) return;
+        if(email && emailInUse(email, {personId:p.id})){ notify('That login email is already used by someone else — each portal login must be unique.'); return; }
+        confirmChange('Change the portal login email for '+p.name+'?', ov||'none', email||'none', ()=>{ p.portalEmail = email; });
         return;
       }
 
       const chit = state.chits.find(c=>c.id===chitId);
       if(!chit) return;
       if(field==='payout'){
-        chit.payoutOverride[month] = el.value;
-        scheduleSave();
+        const nv = el.value;
+        if(Number(nv)===Number(el.defaultValue) && nv!=='') return;
+        confirmChange('Change Chit Paid for '+monthLabel(month)+'?', fmt(Number(el.defaultValue)||0), nv==='' ? 'back to the schedule amount' : fmt(Number(nv)), ()=>{ chit.payoutOverride[month] = nv; });
         return;
       }
       const m = chit.members.find(x=>x.id===memberId);
       if(!m) return;
-      if(field==='name'){
-        setMemberName(m, el.value);
-        scheduleSave();
+      if(field==='memberPerson'){
+        const newId = el.value;
+        if(newId===m.personId) return;
+        if(chit.members.some(x=>x!==m && x.personId===newId)){ notify(personName(newId)+' is already in '+chit.name+'.'); return; }
+        confirmChange('Change who this member row is?', personName(m.personId), personName(newId), ()=>{ relinkMember(m, newId); });
       } else if(field==='slotNo' || field==='slotAmt'){
         const s = (m.slots||[]).find(x=>x.id===slotId);
         if(!s) return;
         const key = field==='slotNo' ? 'takenChitNo' : 'chitTakenAmount';
-        s[key] = el.value===''?null:Number(el.value);
-        if(field==='slotNo'){
-          const sched = scheduledAmount(chit, s.takenChitNo);
-          if(sched!==null){ s.chitTakenAmount = sched; }
-        }
-        scheduleSave(); render();
+        const oldV = s[key]===undefined ? null : s[key];
+        const newV = el.value==='' ? null : Number(el.value);
+        if(oldV===newV) return;
+        const show = v => v===null ? 'blank' : (field==='slotAmt' ? fmt(v) : 'chit no. '+v);
+        confirmChange(field==='slotNo' ? 'Change the chit no. for '+personName(m.personId)+'?' : 'Change the chit amount for '+personName(m.personId)+'?', show(oldV), show(newV), ()=>{
+          s[key] = newV;
+          if(field==='slotNo'){
+            const sched = scheduledAmount(chit, s.takenChitNo);
+            if(sched!==null) s.chitTakenAmount = sched;
+          }
+        });
       } else {
         m[field] = el.value;
         scheduleSave();
@@ -1600,8 +2163,12 @@ function attachEvents(){
       const chit = state.chits.find(c=>c.id===el.dataset.chit);
       const m = chit && chit.members.find(x=>x.id===el.dataset.member);
       if(!m) return;
-      m.slots = (m.slots||[]).filter(s=>s.id!==el.dataset.delSlot);
-      scheduleSave(); render();
+      const slot = (m.slots||[]).find(s=>s.id===el.dataset.delSlot);
+      if(!slot) return;
+      askConfirm('Remove chit no. '+(slot.takenChitNo ?? '—')+(slot.chitTakenAmount ? ' ('+fmt(slot.chitTakenAmount)+')' : '')+' from '+personName(m.personId)+'?', ()=>{
+        m.slots = (m.slots||[]).filter(s=>s.id!==el.dataset.delSlot);
+        scheduleSave();
+      }, 'Remove chit no.');
     });
   });
 
@@ -1616,6 +2183,7 @@ function attachEvents(){
     state.chits.forEach(c=>{
       const mAmt = monthlyAmount(c);
       c.members.forEach(m=>{
+        if(m.isOrg) return;
         Object.keys(m.payments||{}).forEach(mk=>{
           if(m.payments[mk]==='pending') items.push([monthLabel(mk), c.name, personName(m.personId), personRefBy(m.personId), mAmt]);
         });
@@ -1647,18 +2215,24 @@ function attachEvents(){
     el.addEventListener('click', ()=>{
       const chit = state.chits.find(c=>c.id===el.dataset.chit);
       if(!chit) return;
-      if(!confirm('Remove this member?')) return;
-      chit.members = chit.members.filter(m=>m.id!==el.dataset.delMember);
-      scheduleSave(); render();
+      const victim = chit.members.find(m=>m.id===el.dataset.delMember);
+      if(!victim) return;
+      askConfirm('Remove '+personName(victim.personId)+' from '+chit.name+'?\n\nThey move to "Removed members" on this page with their chit numbers and payments, so you can restore them.', ()=>{
+        archiveMember(chit, victim);
+        scheduleSave();
+      }, 'Remove member');
     });
   });
 
   document.querySelectorAll('[data-del-chit]').forEach(el=>{
     el.addEventListener('click', ()=>{
-      if(!confirm('Delete this entire chit group? This cannot be undone.')) return;
-      state.chits = state.chits.filter(c=>c.id!==el.dataset.delChit);
-      ui.view='dashboard'; ui.chitId=null;
-      scheduleSave(); render();
+      const doomed = state.chits.find(c=>c.id===el.dataset.delChit);
+      if(!doomed) return;
+      askConfirm('Delete the whole chit group "'+doomed.name+'" with all its members and payments?\n\nThis cannot be undone.', ()=>{
+        state.chits = state.chits.filter(c=>c.id!==el.dataset.delChit);
+        ui.view='dashboard'; ui.chitId=null;
+        scheduleSave();
+      }, 'Delete group');
     });
   });
 
@@ -1674,16 +2248,61 @@ function attachEvents(){
 function cyclePayment(chitId, memberId, monthKey){
   const chit = state.chits.find(c=>c.id===chitId);
   const m = chit.members.find(x=>x.id===memberId);
-  const order = ['', 'paid', 'pending', 'late'];
   const cur = m.payments[monthKey] || '';
-  const next = order[(order.indexOf(cur)+1) % order.length];
-  if(next==='late'){
-    openModal('lateEntry', chitId, {memberId, monthKey});
+  if(cur===''){
+    // Quick path: a blank cell becomes Paid with one tap.
+    m.payments[monthKey] = 'paid';
+    scheduleSave(); render();
     return;
   }
-  if(next==='') { delete m.payments[monthKey]; if(m.lateFor) delete m.lateFor[monthKey]; }
-  else m.payments[monthKey] = next;
-  scheduleSave(); render();
+  // Already marked: let the admin choose exactly what it should be (or clear it).
+  openModal('payStatus', chitId, {memberId, monthKey});
+}
+
+// In-app confirmation box (browser confirm() can be silently blocked on phones).
+function askConfirm(message, onYes, yesLabel, noLabel, onNo){
+  openModal('confirm', null, {message, onYes, yesLabel: yesLabel||'Yes', noLabel: noLabel||'Cancel', onNo});
+}
+// One-button information box.
+function notify(message){
+  openModal('confirm', null, {message, onYes:null, yesLabel:'OK', noLabel:'Close', info:true});
+}
+// Ask before an edit is kept; cancelling leaves the data unchanged (the page redraws with the old value).
+function confirmChange(title, fromTxt, toTxt, apply){
+  askConfirm(title+'\n\n'+(fromTxt!==null && fromTxt!==undefined ? fromTxt+'  →  ' : '')+toTxt, ()=>{ apply(); scheduleSave(); }, 'Save change', 'Keep old');
+}
+// Is this login e-mail already used by a person or a Ref (group admin)?
+function emailInUse(email, except){
+  const lower = (email||'').trim().toLowerCase();
+  if(!lower) return false;
+  except = except || {};
+  return state.people.some(p=>p.id!==except.personId && p.portalEmail && p.portalEmail.toLowerCase()===lower)
+      || (state.refs||[]).some(r=>r.id!==except.refId && r.portalEmail && r.portalEmail.toLowerCase()===lower);
+}
+// Removed members are kept (with their chit numbers and payments) so a mistaken delete can be undone.
+function archiveMember(chit, member){
+  if(!chit.removed) chit.removed = [];
+  chit.removed.push(Object.assign({}, member, {_name: personName(member.personId), _refBy: personRefBy(member.personId), _removedAt: new Date().toISOString()}));
+  chit.members = chit.members.filter(m=>m.id!==member.id);
+}
+function restoreMember(chit, recId){
+  const idx = (chit.removed||[]).findIndex(r=>r.id===recId);
+  if(idx<0) return null;
+  const rec = chit.removed[idx];
+  let person = state.people.find(p=>p.id===rec.personId);
+  if(!person){
+    const id = getOrCreatePerson(rec._name || 'Unnamed');
+    person = state.people.find(p=>p.id===id);
+    if(person && !person.refBy && rec._refBy) person.refBy = rec._refBy;
+  }
+  chit.removed.splice(idx,1);
+  if(chit.members.some(m=>m.personId===person.id)) return null;      // already back in the group
+  const m = Object.assign({}, rec);
+  delete m._name; delete m._refBy; delete m._removedAt;
+  m.personId = person.id;
+  if(chit.members.some(x=>x.sno===m.sno)) m.sno = Math.max(0, ...chit.members.map(x=>x.sno)) + 1;
+  chit.members.push(m);
+  return m;
 }
 
 function setMemberName(m, newName){
@@ -1717,8 +2336,11 @@ function addExistingMembersToChit(chitId, personIds){
   let sno = chit.members.length ? Math.max(...chit.members.map(m=>m.sno)) : 0;
   personIds.forEach(pid=>{
     if(chit.members.some(m=>m.personId===pid)) return; // already in this group
+    const pn = (state.people.find(p=>p.id===pid)||{}).name || '';
+    const archived = (chit.removed||[]).find(r=>r.personId===pid || (r._name && nameKey(r._name)===nameKey(pn)));
+    if(archived){ restoreMember(chit, archived.id); return; }   // comes back with the same chit numbers
     sno += 1;
-    chit.members.push({id:uid('m'), sno, personId:pid, payments:{}, slots:[], lateFor:{}});
+    chit.members.push({id:uid('m'), sno, personId:pid, payments:{}, slots:[], lateFor:{}, payModes:{}});
   });
   scheduleSave(); render();
 }
@@ -1795,7 +2417,7 @@ function renderModal(){
         </div>
         <div class="field-row">
           <div class="field"><label>Start Month</label><input id="fStart" type="month" value="${currentMonthKey()}"/></div>
-          <div class="field"><label>Duration (months)</label><input id="fDuration" type="number" placeholder="20"/></div>
+          <div class="field"><label>Duration (months) — members + 1 Kovil seat</label><input id="fDuration" type="number" placeholder="21"/></div>
         </div>
         <div class="field"><label>Opening Balance Carried Forward (₹)</label><input id="fOpening" type="number" value="0"/></div>
         <div class="field">
@@ -1831,6 +2453,15 @@ function renderModal(){
     document.getElementById('fValue').addEventListener('input', regenerateTemplate);
     document.getElementById('fMembers').addEventListener('input', regenerateTemplate);
     document.getElementById('fDuration').addEventListener('input', regenerateTemplate);
+    let durationTouched = false;
+    document.getElementById('fDuration').addEventListener('input', ()=>{ durationTouched = true; });
+    document.getElementById('fMembers').addEventListener('input', ()=>{
+      if(!durationTouched){
+        const n = Number(document.getElementById('fMembers').value)||0;
+        document.getElementById('fDuration').value = n>0 ? n+1 : '';
+        regenerateTemplate();
+      }
+    });
     document.getElementById('mSave').onclick = ()=>{
       const name = document.getElementById('fName').value.trim() || 'Untitled Chit';
       const value = Number(document.getElementById('fValue').value)||0;
@@ -1841,21 +2472,25 @@ function renderModal(){
       const typedSchedule = parseScheduleText(document.getElementById('fSchedule').value);
       if(!state.scheduleTemplates) state.scheduleTemplates = {};
       const existingShared = state.scheduleTemplates[String(value)];
+      const createGroup = (replaceShared)=>{
+        if(replaceShared) state.scheduleTemplates[String(value)] = Object.assign({}, existingShared, typedSchedule);
+        const id = uid('chit');
+        const chit = {id, name, chitValue:value, totalMembers:members, durationMonths:duration, startMonth:start, openingCarry:opening, members:[], payoutOverride:{}, distributionSchedule:{}, removed:[], denoms:{}, orgChecked:true};
+        state.chits.push(chit);
+        addKovilSeat(chit);                       // the organization seat, chit no. 1 by default
+        scheduleSave();
+        ui.modal=null; ui.view='chit'; ui.chitId=id;
+        render();
+      };
       if(Object.keys(typedSchedule).length){
         if(!existingShared){
           state.scheduleTemplates[String(value)] = typedSchedule;
-        } else {
-          const changed = Object.keys(typedSchedule).some(k=>Number(existingShared[k])!==Number(typedSchedule[k]));
-          if(changed && confirm('A schedule for '+fmt(value)+' chits already exists. Replace it for ALL '+fmt(value)+' groups?\n\nOK = replace for all groups, Cancel = keep the existing shared schedule.')){
-            state.scheduleTemplates[String(value)] = Object.assign({}, existingShared, typedSchedule);
-          }
+        } else if(Object.keys(typedSchedule).some(k=>Number(existingShared[k])!==Number(typedSchedule[k]))){
+          askConfirm('A schedule for '+fmt(value)+' chits already exists.\n\nReplace it for ALL '+fmt(value)+' groups?', ()=>createGroup(true), 'Replace for all groups', 'Keep existing schedule', ()=>createGroup(false));
+          return;
         }
       }
-      const id = uid('chit');
-      state.chits.push({id, name, chitValue:value, totalMembers:members, durationMonths:duration, startMonth:start, openingCarry:opening, members:[], payoutOverride:{}, distributionSchedule:{}});
-      scheduleSave();
-      ui.modal=null; ui.view='chit'; ui.chitId=id;
-      render();
+      createGroup(false);
     };
   }
 
@@ -1882,15 +2517,19 @@ function renderModal(){
     document.body.appendChild(container);
     document.getElementById('mCancel').onclick = closeModal;
     document.getElementById('mSave').onclick = ()=>{
-      chit.name = document.getElementById('fName').value.trim() || chit.name;
-      chit.chitValue = Number(document.getElementById('fValue').value)||chit.chitValue;
-      chit.totalMembers = Number(document.getElementById('fMembers').value)||chit.totalMembers;
-      chit.startMonth = document.getElementById('fStart').value || chit.startMonth;
-      chit.durationMonths = Number(document.getElementById('fDuration').value)||chit.durationMonths;
-      chit.openingCarry = Number(document.getElementById('fOpening').value)||0;
-      scheduleSave();
-      ui.modal=null;
-      render();
+      const nv = {
+        name: document.getElementById('fName').value.trim() || chit.name,
+        chitValue: Number(document.getElementById('fValue').value)||chit.chitValue,
+        totalMembers: Number(document.getElementById('fMembers').value)||chit.totalMembers,
+        startMonth: document.getElementById('fStart').value || chit.startMonth,
+        durationMonths: Number(document.getElementById('fDuration').value)||chit.durationMonths,
+        openingCarry: Number(document.getElementById('fOpening').value)||0,
+      };
+      const labels = {name:'Name', chitValue:'Chit value', totalMembers:'Members', startMonth:'Start month', durationMonths:'Duration (months)', openingCarry:'Opening balance'};
+      const changes = Object.keys(nv).filter(k=>String(nv[k])!==String(chit[k]===undefined?'':chit[k])).map(k=>labels[k]+': '+chit[k]+' → '+nv[k]);
+      ui.modal = null;
+      if(!changes.length){ render(); return; }
+      confirmChange('Save changes to this chit group?', null, changes.join('\n'), ()=>{ Object.assign(chit, nv); });
     };
   }
 
@@ -1916,18 +2555,21 @@ function renderModal(){
     document.getElementById('mCancel').onclick = closeModal;
     document.getElementById('mSave').onclick = ()=>{
       const parsed = parseScheduleText(document.getElementById('fSchedule').value);
-      // The schedule is fixed per chit value: update every group's slot amounts, and
-      // the Chit Paid column follows. Manual Chit Paid entries are replaced only if
-      // you agree.
-      let clear = true;
+      const sameValue = groupsWithSameValue(chit);
       const mismatches = countOverrideMismatches(chit, parsed);
-      if(mismatches>0){
-        clear = confirm(mismatches+' Chit Paid value(s) were typed in by hand and differ from this schedule.\n\nOK = replace them with the schedule, Cancel = keep the typed values.');
-      }
-      applySharedSchedule(chit, parsed, clear);
-      scheduleSave();
-      ui.modal=null;
-      render();
+      ui.modal = null;
+      confirmChange('Update the shared '+fmt(chit.chitValue)+' schedule?', null,
+        'It applies to '+sameValue.length+' group(s): '+sameValue.map(g=>g.name).join(', ')+'.\n\nMember chit amounts and Chit Paid follow it.',
+        ()=>{
+          if(mismatches>0){
+            askConfirm(mismatches+' Chit Paid value(s) were typed in by hand and differ from this schedule.\n\nReplace them with the schedule, or keep what you typed?',
+              ()=>{ applySharedSchedule(chit, parsed, true); scheduleSave(); },
+              'Replace with schedule', 'Keep typed values',
+              ()=>{ applySharedSchedule(chit, parsed, false); scheduleSave(); });
+          } else {
+            applySharedSchedule(chit, parsed, true);
+          }
+        });
     };
   }
 
@@ -2010,7 +2652,7 @@ function renderModal(){
     document.querySelectorAll('.denomIn').forEach(inp=>inp.addEventListener('input', recompute));
     recompute();
     document.getElementById('mCancel').onclick = closeModal;
-    document.getElementById('mClear')?.addEventListener('click', ()=>{ delete chit.denoms[mk]; scheduleSave(); ui.modal=null; render(); });
+    document.getElementById('mClear')?.addEventListener('click', ()=>{ ui.modal = null; askConfirm('Clear the saved cash count for '+chit.name+' — '+monthLabel(mk)+'?', ()=>{ delete chit.denoms[mk]; scheduleSave(); }, 'Clear count'); });
     document.getElementById('mSave').onclick = ()=>{
       const rec = {};
       document.querySelectorAll('.denomIn').forEach(inp=>{ const n = Number(inp.value)||0; if(n>0) rec[inp.dataset.v] = n; });
@@ -2020,10 +2662,209 @@ function renderModal(){
     };
   }
 
+  if(ui.modal.type==='addMember'){
+    const chit = state.chits.find(c=>c.id===ui.modal.chitId);
+    const inGroup = new Set(chit.members.map(m=>m.personId));
+    const usedAnywhere = new Set();
+    state.chits.forEach(c=>c.members.forEach(m=>usedAnywhere.add(m.personId)));
+    const avail = state.people
+      .filter(p=>!inGroup.has(p.id))
+      .filter(p=>!(/^New Member \d+$/.test(p.name) && !usedAnywhere.has(p.id)))     // hide unused placeholders
+      .sort((a,b)=>a.name.localeCompare(b.name));
+    container.innerHTML = `
+      <div class="modal">
+        <h3>Add member</h3>
+        <p style="font-size:12.5px;color:var(--ink-soft);margin-top:-6px;">${escapeHtml(chit.name)}</p>
+        <div class="field"><label>Pick an existing person</label>
+          <select id="amPerson"><option value="">— New person (type the name below) —</option>${avail.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}</select></div>
+        <div class="field" id="amNameWrap"><label>New person's name</label><input id="amName" placeholder="Full name"/></div>
+        <div class="field"><label>Ref By</label><select id="amRef">${refOptionsHtml('')}</select>
+          <p style="font-size:11px;color:var(--ink-soft);margin:4px 0 0;">Need a new Ref? Add it on the People page first.</p></div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:8px;"><input type="checkbox" id="amOrg"/> Kovil (organization) seat — no monthly payment, chit distribution only</label>
+        <div id="amErr" style="color:var(--red);font-size:12.5px;min-height:16px;"></div>
+        <div class="modal-actions"><button class="btn" id="mCancel">Cancel</button><button class="btn primary" id="mSave">Add member</button></div>
+      </div>`;
+    document.body.appendChild(container);
+    document.getElementById('mCancel').onclick = closeModal;
+    document.getElementById('amPerson').addEventListener('change', ()=>{
+      const id = document.getElementById('amPerson').value;
+      document.getElementById('amNameWrap').style.display = id ? 'none' : '';
+      document.getElementById('amRef').value = id ? personRefBy(id) : '';
+    });
+    document.getElementById('mSave').onclick = ()=>{
+      const err = document.getElementById('amErr');
+      let personId = document.getElementById('amPerson').value;
+      let isNew = false;
+      if(!personId){
+        const name = (document.getElementById('amName').value||'').trim();
+        if(!name){ err.textContent = 'Enter a name, or pick an existing person above.'; return; }
+        const existing = state.people.find(p=>p.name.toLowerCase()===name.toLowerCase());
+        if(existing && inGroup.has(existing.id)){ err.textContent = name+' is already in this group.'; return; }
+        const before = state.people.length;
+        personId = getOrCreatePerson(name);
+        isNew = state.people.length > before;
+      }
+      const person = state.people.find(p=>p.id===personId);
+      const refVal = document.getElementById('amRef').value || '';
+      if(person && (refVal || isNew)) person.refBy = refVal;
+      // A member who was removed earlier comes back with the same chit numbers and payments.
+      const archived = (chit.removed||[]).find(r=>r.personId===personId || (person && r._name && nameKey(r._name)===nameKey(person.name)));
+      let member = archived ? restoreMember(chit, archived.id) : null;
+      if(!member){
+        const sno = chit.members.length ? Math.max(...chit.members.map(m=>m.sno))+1 : 1;
+        member = {id:uid('m'), sno, personId, payments:{}, slots:[], lateFor:{}, payModes:{}};
+        chit.members.push(member);
+      }
+      if(document.getElementById('amOrg').checked) setOrgSeat(chit, member, true);
+      scheduleSave(); ui.modal = null; render();
+    };
+  }
+
+  if(ui.modal.type==='renamePerson'){
+    const p = state.people.find(x=>x.id===ui.modal.personId);
+    container.innerHTML = `
+      <div class="modal">
+        <h3>Rename person</h3>
+        <div class="field"><label>Name</label><input id="rnName" value="${escapeAttr(p ? p.name : '')}"/></div>
+        <div id="rnErr" style="color:var(--red);font-size:12.5px;min-height:16px;"></div>
+        <div class="modal-actions"><button class="btn" id="mCancel">Cancel</button><button class="btn primary" id="mSave">Save</button></div>
+      </div>`;
+    document.body.appendChild(container);
+    document.getElementById('mCancel').onclick = closeModal;
+    document.getElementById('mSave').onclick = ()=>{
+      const name = (document.getElementById('rnName').value||'').trim();
+      const err = document.getElementById('rnErr');
+      if(!name){ err.textContent = 'Name cannot be empty.'; return; }
+      if(state.people.some(x=>x.id!==p.id && x.name.toLowerCase()===name.toLowerCase())){ err.textContent = 'Another person already has this name — pick that person from the list instead.'; return; }
+      if(name===p.name){ closeModal(); return; }
+      const oldName = p.name;
+      ui.modal = null;
+      confirmChange('Rename this person everywhere?', oldName, name, ()=>{ p.name = name; });
+    };
+  }
+
+  if(ui.modal.type==='personEdit'){
+    const p = ui.modal.personId ? state.people.find(x=>x.id===ui.modal.personId) : null;
+    container.innerHTML = `
+      <div class="modal">
+        <h3>${p ? 'Edit person' : 'Add person'}</h3>
+        <div class="field"><label>Name</label><input id="peName" value="${escapeAttr(p ? p.name : '')}" placeholder="Full name"/></div>
+        <div class="field"><label>Ref By</label><select id="peRef">${refOptionsHtml(p ? (p.refBy||'') : '')}</select></div>
+        <div class="field"><label>Portal login email (optional)</label><input id="peEmail" type="email" value="${escapeAttr(p ? (p.portalEmail||'') : '')}" placeholder="member's login email"/></div>
+        <div id="peErr" style="color:var(--red);font-size:12.5px;min-height:16px;"></div>
+        <div class="modal-actions"><button class="btn" id="mCancel">Cancel</button><button class="btn primary" id="mSave">${p ? 'Save changes' : 'Add person'}</button></div>
+      </div>`;
+    document.body.appendChild(container);
+    document.getElementById('mCancel').onclick = closeModal;
+    document.getElementById('mSave').onclick = ()=>{
+      const err = document.getElementById('peErr');
+      const name = (document.getElementById('peName').value||'').trim();
+      const refVal = document.getElementById('peRef').value || '';
+      const email = (document.getElementById('peEmail').value||'').trim();
+      if(!name){ err.textContent = 'Enter a name.'; return; }
+      if(state.people.some(x=>(!p || x.id!==p.id) && x.name.toLowerCase()===name.toLowerCase())){ err.textContent = 'A person with this name already exists — edit that one instead.'; return; }
+      if(email && emailInUse(email, {personId: p ? p.id : null})){ err.textContent = 'That login email is already used by someone else.'; return; }
+      if(!p){
+        state.people.push({id:uid('person'), name, refBy:refVal, portalEmail:email});
+        scheduleSave(); ui.modal = null; render();
+        return;
+      }
+      ui.modal = null;
+      const changes = [];
+      if(name!==p.name) changes.push('Name: '+p.name+' → '+name);
+      if(refVal!==(p.refBy||'')) changes.push('Ref By: '+(p.refBy||'none')+' → '+(refVal||'none'));
+      if(email!==(p.portalEmail||'')) changes.push('Login email: '+(p.portalEmail||'none')+' → '+(email||'none'));
+      if(!changes.length){ render(); return; }
+      confirmChange('Save these changes?', null, changes.join('\n'), ()=>{ p.name = name; p.refBy = refVal; p.portalEmail = email; });
+    };
+  }
+
+  if(ui.modal.type==='payoutStatus'){
+    const chit = state.chits.find(c=>c.id===ui.modal.chitId);
+    const m = chit.members.find(x=>x.id===ui.modal.memberId);
+    const slot = (m.slots||[]).find(x=>x.id===ui.modal.slotId);
+    const mk = addMonths(chit.startMonth, Number(slot.takenChitNo)-1);
+    const cur = slot.payoutStatus==='paid' ? (slot.payoutMode||'paid') : '';
+    const opt = (key,label)=>`<button class="btn ${cur===key?'primary':''}" data-payset="${key}" style="width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;font-size:14px;">${label}</button>`;
+    container.innerHTML = `
+      <div class="modal">
+        <h3>Chit payout</h3>
+        <p style="font-size:12.5px;color:var(--ink-soft);margin-top:-6px;">${escapeHtml(personName(m.personId))} — chit ${slot.takenChitNo} · ${monthLabel(mk)} · ${fmt(Number(slot.chitTakenAmount)||0)}</p>
+        ${opt('cash','✓ Paid by Cash')}
+        ${opt('upi','✓ Paid by UPI')}
+        ${opt('','✕ Not paid yet')}
+        <div class="modal-actions"><button class="btn" id="mCancel">Cancel</button></div>
+      </div>`;
+    document.body.appendChild(container);
+    document.getElementById('mCancel').onclick = closeModal;
+    document.querySelectorAll('[data-payset]').forEach(btn=>btn.addEventListener('click', ()=>{
+      const v = btn.dataset.payset;
+      slot.payoutStatus = v ? 'paid' : '';
+      slot.payoutMode = v;
+      scheduleSave(); ui.modal = null; render();
+    }));
+  }
+
+  if(ui.modal.type==='payStatus'){
+    const chit = state.chits.find(c=>c.id===ui.modal.chitId);
+    const m = chit.members.find(x=>x.id===ui.modal.memberId);
+    const mk = ui.modal.monthKey;
+    const cur = m.payments[mk] || '';
+    let mode = (m.payModes||{})[mk] || '';
+    const opt = (key,label)=>`<button class="btn ${cur===key?'primary':''}" data-set="${key}" style="width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;font-size:14px;">${label}</button>`;
+    const modeBtn = (key,label)=>`<button class="btn small ${mode===key?'primary':''}" data-mode="${key}" style="flex:1;padding:9px;">${label}</button>`;
+    container.innerHTML = `
+      <div class="modal">
+        <h3>Payment status</h3>
+        <p style="font-size:12.5px;color:var(--ink-soft);margin-top:-6px;">${escapeHtml(personName(m.personId))} — ${monthLabel(mk)}</p>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">Paid by (choose first, then tap Paid or Late)</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">${modeBtn('cash','Cash')}${modeBtn('upi','UPI')}</div>
+        ${opt('paid','✓ Paid on time')}
+        ${opt('pending','! Pending / unpaid')}
+        ${opt('late','L Paid late (settles an earlier due)')}
+        ${opt('','✕ Clear mark (not due yet)')}
+        <div class="modal-actions"><button class="btn" id="mCancel">Cancel</button></div>
+      </div>`;
+    document.body.appendChild(container);
+    document.getElementById('mCancel').onclick = closeModal;
+    document.querySelectorAll('[data-mode]').forEach(btn=>btn.addEventListener('click', ()=>{
+      mode = (mode===btn.dataset.mode) ? '' : btn.dataset.mode;
+      document.querySelectorAll('[data-mode]').forEach(x=>x.classList.toggle('primary', x.dataset.mode===mode));
+    }));
+    document.querySelectorAll('[data-set]').forEach(btn=>btn.addEventListener('click', ()=>{
+      const v = btn.dataset.set;
+      if(v==='late'){ ui.modal = null; openModal('lateEntry', chit.id, {memberId:m.id, monthKey:mk, mode}); return; }
+      if(v===''){ delete m.payments[mk]; }
+      else { m.payments[mk] = v; }
+      if(m.lateFor) delete m.lateFor[mk];
+      if(!m.payModes) m.payModes = {};
+      if(v==='paid' && mode) m.payModes[mk] = mode; else delete m.payModes[mk];
+      scheduleSave(); ui.modal = null; render();
+    }));
+  }
+
+  if(ui.modal.type==='confirm'){
+    container.innerHTML = `
+      <div class="modal">
+        <h3>${ui.modal.info ? 'Notice' : 'Please confirm'}</h3>
+        <p style="white-space:pre-line;font-size:13.5px;line-height:1.5;">${escapeHtml(ui.modal.message)}</p>
+        <div class="modal-actions">
+          ${ui.modal.info ? '' : `<button class="btn" id="mCancel">${escapeHtml(ui.modal.noLabel)}</button>`}
+          <button class="btn primary" id="mSave">${escapeHtml(ui.modal.yesLabel)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(container);
+    const yes = ui.modal.onYes, no = ui.modal.onNo;
+    const cancelBtn = document.getElementById('mCancel');
+    if(cancelBtn) cancelBtn.onclick = ()=>{ ui.modal = null; if(no) no(); render(); };
+    document.getElementById('mSave').onclick = ()=>{ ui.modal = null; if(yes) yes(); render(); };
+  }
+
   if(ui.modal.type==='lateEntry'){
     const chit = state.chits.find(c=>c.id===ui.modal.chitId);
     const m = chit.members.find(x=>x.id===ui.modal.memberId);
     const monthKey = ui.modal.monthKey;
+    const modeSel = ui.modal.mode || '';
     container.innerHTML = `
       <div class="modal">
         <h3>Late Payment</h3>
@@ -2041,6 +2882,8 @@ function renderModal(){
     document.getElementById('mSave').onclick = ()=>{
       const forMonth = document.getElementById('fForMonth').value || monthKey;
       m.payments[monthKey] = 'late';
+      if(!m.payModes) m.payModes = {};
+      if(modeSel) m.payModes[monthKey] = modeSel; else delete m.payModes[monthKey];
       if(!m.lateFor) m.lateFor = {};
       m.lateFor[monthKey] = forMonth;
       // The original due is now settled — clear it if it was still marked pending.
