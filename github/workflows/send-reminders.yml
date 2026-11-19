@@ -1,1 +1,24 @@
-
+name: Send chit reminders
+on:
+  schedule:
+    - cron: '*/15 * * * *'     # about every 15 minutes: send reminders queued from the portal
+    - cron: '30 3 * * *'       # 09:00 India time, daily: automatic reminders too
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'queue, auto or both'
+        default: 'both'
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install
+        run: cd scripts && npm install --no-audit --no-fund
+      - name: Send
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node scripts/send-reminders.mjs "${{ github.event.inputs.mode || (github.event.schedule == '30 3 * * *' && 'both') || 'queue' }}"
