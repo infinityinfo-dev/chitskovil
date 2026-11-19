@@ -216,7 +216,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
   from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-auth.js';
-import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp, enableIndexedDbPersistence }
+import { getFirestore, doc, setDoc, onSnapshot, serverTimestamp, enableIndexedDbPersistence, arrayUnion }
   from 'https://www.gstatic.com/firebasejs/12.8.0/firebase-firestore.js';
 
 const FIREBASE_CONFIG = {
@@ -228,6 +228,8 @@ const FIREBASE_CONFIG = {
   appId: "1:629125650408:web:a3902245e908cf9d80b65d"
 };
 const FIREBASE_CONFIGURED = FIREBASE_CONFIG.apiKey !== "PASTE_YOUR_API_KEY";
+// Push reminders: the Web Push (VAPID) public key from Firebase console -> Project settings -> Cloud Messaging -> Web Push certificates.
+const FCM_VAPID_KEY = "BGMflsTBP7qTUWyw3Lalv9VgwoD8bD5zJMPeQFYz-h6zEV3Kuex0M30jD2M4crGrTSjgYIlompmLuNlw0_RR1yA";
 
 let fbApp=null, auth=null, db=null, currentUser=null, authLoading=true, cloudOk=true, unsubscribeSnapshot=null;
 let cloudMeta = { updatedBy:null };
@@ -241,7 +243,7 @@ if(FIREBASE_CONFIGURED){
 
 /* ============================= STATE ============================= */
 let state = null;
-let ui = { view:'dashboard', chitId:null, modal:null, sidebarOpen:false, reportTab:'month', reportMonth:null, dashboardExpanded:false, showAllMonths:false, portalView:'dashboard', refView:'dashboard', refShowAll:false };
+let ui = { view:'dashboard', chitId:null, modal:null, sidebarOpen:false, reportTab:'month', reportMonth:null, dashboardExpanded:false, showAllMonths:false, portalView:'dashboard', refView:'dashboard', refShowAll:false, remAudience:'pending' };
 let saveTimer = null;
 
 function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2,9); }
@@ -259,7 +261,7 @@ function defaultState(){
       {id:uid('m'), sno:3, personId:pB.id, payments:{}, slots:[{id:uid('slot'), takenChitNo:2, chitTakenAmount:9100}]},
     ]
   };
-  return { people: [pOrganiser, pA, pB], chits: [chit], scheduleTemplates: {}, refs: [] };
+  return { people: [pOrganiser, pA, pB], chits: [chit], scheduleTemplates: {}, refs: [], adminEmails: [], reminderSettings: {autoMembers:false, autoGroupAdmins:false} };
 }
 
 function getOrCreatePerson(name){
@@ -361,6 +363,8 @@ function migrate(){
   });
   // The Ref By list: every Ref used by any person is kept in state.refs (group admins log in as a Ref).
   if(!Array.isArray(state.refs)) state.refs = [];
+  if(!Array.isArray(state.adminEmails)) state.adminEmails = [];
+  if(!state.reminderSettings || typeof state.reminderSettings!=='object') state.reminderSettings = {autoMembers:false, autoGroupAdmins:false};
   state.refs.forEach(r=>{ if(r.portalEmail===undefined) r.portalEmail=''; });
   state.people.forEach(p=>{
     const rv = (p.refBy||'').trim();
@@ -674,6 +678,146 @@ function deletePerson(id){
   });
   state.people = state.people.filter(p=>p.id!==id);
 }
+/* ---------------- Push reminders ----------------
+   Devices register an FCM token (stored per login email). Reminders are queued in Firestore and sent
+   by the free scheduled GitHub workflow (see REMINDERS_SETUP.md), which also sends the daily automatic ones. */
+const DEFAULT_REMINDER = 'Hi {name}, your chit instalment for {months} ({amount}) is pending. Please pay at the earliest.';
+let reminderItems = [], tokenMap = {}, reminderSubs = null;
+function emailKey(email){ return normEmail(email).replace(/\./g,'(dot)'); }
+function devicesFor(email){ return (tokenMap[emailKey(email)] || []).length; }
+function startReminderSubs(){
+  if(reminderSubs || !db) return;
+  reminderSubs = [
+    onSnapshot(doc(db,'chitLedgerApp','reminders'), snap=>{
+      reminderItems = snap.exists() ? (snap.data().items || []) : [];
+      if(ui.view==='reminders') render();
+    }, err=>console.warn('reminders listener:', err)),
+    onSnapshot(doc(db,'chitLedgerApp','fcmTokens'), snap=>{
+      tokenMap = snap.exists() ? (snap.data().tokens || {}) : {};
+      if(ui.view==='reminders') render();
+    }, err=>console.warn('tokens listener:', err)),
+  ];
+}
+function remindersSupported(){
+  return typeof window!=='undefined' && 'Notification' in window && typeof navigator!=='undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
+}
+function importMessaging(){ return import('https://www.gstatic.com/firebasejs/12.8.0/firebase-messaging.js'); }
+async function enableReminders(){
+  if(!FCM_VAPID_KEY){ notify('Reminders are not set up yet.\n\nThe portal admin needs to add the Web Push key and the reminder workflow — see REMINDERS_SETUP.md.'); return; }
+  if(!remindersSupported()){ notify('This browser cannot show notifications.\n\nOn iPhone, first add the app to the Home Screen, then open it from there.'); return; }
+  try{
+    const perm = await Notification.requestPermission();
+    if(perm!=='granted'){ notify('Notifications are blocked for this site.\n\nAllow them in the browser settings, then tap Reminders again.'); return; }
+    const reg = await navigator.serviceWorker.ready;
+    const {getMessaging, getToken} = await importMessaging();
+    const token = await getToken(getMessaging(fbApp), {vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg});
+    if(!token) throw new Error('no token was issued');
+    await setDoc(doc(db,'chitLedgerApp','fcmTokens'), {tokens:{[emailKey(currentUser.email)]: arrayUnion(token)}}, {merge:true});
+    notify('Reminders are on for this device.');
+  }catch(e){
+    notify('Could not turn on reminders: '+((e && e.message) || e));
+  }
+}
+function attachNotifyEvents(){
+  document.querySelectorAll('[data-enable-reminders]').forEach(el=>{
+    el.addEventListener('click', ()=>{ enableReminders(); });
+  });
+}
+// Who owes what: people with pending marks (the Kovil seat never owes).
+function pendingDuesByPerson(filterFn){
+  const map = {};
+  state.chits.forEach(c=>{
+    const mAmt = monthlyAmount(c);
+    c.members.forEach(m=>{
+      if(m.isOrg) return;
+      const p = state.people.find(x=>x.id===m.personId);
+      if(!p || (filterFn && !filterFn(c,p))) return;
+      const pend = Object.keys(m.payments||{}).filter(mk=>m.payments[mk]==='pending').sort();
+      if(!pend.length) return;
+      const o = map[p.id] || (map[p.id] = {person:p, months:[], amount:0, groups:[]});
+      pend.forEach(mk=>o.months.push(monthLabel(mk)));
+      o.amount += pend.length*mAmt;
+      if(!o.groups.includes(c.name)) o.groups.push(c.name);
+    });
+  });
+  return Object.values(map);
+}
+function reminderTargets(audience){
+  const targets = []; let noEmail = 0;
+  if(audience==='all'){
+    state.people.forEach(p=>{ if(p.portalEmail) targets.push({email:p.portalEmail, name:p.name, months:'', amount:0, group:''}); });
+    (state.refs||[]).forEach(r=>{ if(r.portalEmail && !targets.some(t=>normEmail(t.email)===normEmail(r.portalEmail))) targets.push({email:r.portalEmail, name:r.name, months:'', amount:0, group:''}); });
+    return {targets, noEmail: state.people.filter(p=>!p.portalEmail).length};
+  }
+  let filter = null;
+  if(audience.startsWith('ref:')){ const rn = audience.slice(4); filter = (c,p)=>nameKey(p.refBy)===nameKey(rn); }
+  else if(audience.startsWith('chit:')){ const id = audience.slice(5); filter = (c)=>c.id===id; }
+  pendingDuesByPerson(filter).forEach(o=>{
+    if(!o.person.portalEmail){ noEmail++; return; }
+    targets.push({email:o.person.portalEmail, name:o.person.name, months:o.months.join(', '), amount:o.amount, group:o.groups.join(', ')});
+  });
+  return {targets, noEmail};
+}
+function fillTemplate(tpl, t){
+  return (tpl||'').replace(/\{name\}/g, t.name||'').replace(/\{months\}/g, t.months||'').replace(/\{amount\}/g, t.amount ? fmt(t.amount) : '').replace(/\{group\}/g, t.group||'');
+}
+async function queueReminders(title, tpl, targets){
+  if(!db || !targets.length) return 0;
+  const now = new Date().toISOString();
+  const items = targets.map(t=>({id:uid('rem'), createdAt:now, createdBy:currentUser.email, email:t.email, name:t.name, title, body:fillTemplate(tpl,t), status:'queued'}));
+  await setDoc(doc(db,'chitLedgerApp','reminders'), {items: arrayUnion(...items)}, {merge:true});
+  return items.length;
+}
+function sendRemindersNow(title, tpl, targets){
+  queueReminders(title, tpl, targets).then(n=>{
+    notify(n+' reminder'+(n===1 ? '' : 's')+' queued.\n\nThe reminder workflow sends them within about 15 minutes. People only receive them on devices where they turned Reminders on.');
+  }).catch(e=>notify('Could not queue the reminders: '+((e && e.message) || e)));
+}
+function renderRemindersPage(){
+  const audience = ui.remAudience || 'pending';
+  const title = ui.remTitle!==undefined ? ui.remTitle : 'Chit reminder';
+  const body = ui.remBody!==undefined ? ui.remBody : DEFAULT_REMINDER;
+  const {targets, noEmail} = reminderTargets(audience);
+  const withDevice = targets.filter(t=>devicesFor(t.email)>0).length;
+  const audOptions = [['pending','Everyone with pending dues']]
+    .concat((state.refs||[]).map(r=>['ref:'+r.name, 'Pending dues — '+r.name+"'s group"]))
+    .concat(state.chits.map(c=>['chit:'+c.id, 'Pending dues — '+c.name]))
+    .concat([['all','Everyone with a login']]);
+  const settings = state.reminderSettings || {};
+  const perm = (typeof Notification!=='undefined') ? Notification.permission : 'unsupported';
+  const history = reminderItems.slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')).slice(0,25).map(i=>{
+    const cls = i.status==='sent' ? 'pos' : (i.status==='queued' ? '' : 'neg');
+    const label = i.status==='no-device' ? 'No device' : (i.status ? i.status.charAt(0).toUpperCase()+i.status.slice(1) : '');
+    return `<tr><td>${i.createdAt ? new Date(i.createdAt).toLocaleString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</td><td>${escapeHtml(i.name||i.email||'')}</td><td style="white-space:normal;min-width:160px;">${escapeHtml(i.body||'')}</td><td><span class="badge ${cls}">${escapeHtml(label)}</span></td></tr>`;
+  }).join('');
+  const preview = targets.slice(0,8).map(t=>escapeHtml(t.name)).join(', ') + (targets.length>8 ? ' …' : '');
+  const loginsOn = new Set(Object.keys(tokenMap).filter(k=>(tokenMap[k]||[]).length)).size;
+  return `
+    <div class="topbar"><div><h2>Reminders</h2><div class="sub">Send push reminders about pending dues</div></div><button class="btn" data-enable-reminders="1">&#128276; Turn on for this device</button></div>
+    ${FCM_VAPID_KEY ? '' : `<div class="card" style="border-color:var(--gold);"><h3>Setup needed</h3><p style="font-size:13px;margin:0;">Reminders are not switched on yet. Add the Web Push key to the app and set up the free reminder workflow — the steps are in <b>REMINDERS_SETUP.md</b>. You can already queue reminders below; they are sent once the workflow is running.</p></div>`}
+    <div class="card">
+      <h3>Send a reminder</h3>
+      <div class="field"><label>Who</label><select id="remAudience">${audOptions.map(([v,l])=>`<option value="${escapeAttr(v)}" ${v===audience?'selected':''}>${escapeHtml(l)}</option>`).join('')}</select></div>
+      <div class="field"><label>Title</label><input id="remTitle" value="${escapeAttr(title)}"/></div>
+      <div class="field"><label>Message</label><textarea id="remBody" rows="3" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;">${escapeHtml(body)}</textarea>
+        <p style="font-size:11px;color:var(--ink-soft);margin:4px 0 0;">{name} {months} {amount} {group} are filled in for each person.</p></div>
+      <p style="font-size:12.5px;margin:6px 0;"><b>${targets.length}</b> ${targets.length===1?'person':'people'} will get this${targets.length ? ' — '+withDevice+' with Reminders turned on' : ''}.${noEmail ? ' '+noEmail+' more have no login email and cannot be reached.' : ''}${preview ? '<br><span style="color:var(--ink-soft);">'+preview+'</span>' : ''}</p>
+      <div class="toolbar"><button class="btn primary" id="btnQueueReminder" ${targets.length?'':'disabled'}>Queue reminder</button><button class="btn ghost small" id="btnRemTest">Send a test to me</button></div>
+    </div>
+    <div class="card">
+      <h3>Automatic daily reminders</h3>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:6px;"><input type="checkbox" data-rem-setting="autoMembers" ${settings.autoMembers?'checked':''}/> Remind members who have pending dues</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;"><input type="checkbox" data-rem-setting="autoGroupAdmins" ${settings.autoGroupAdmins?'checked':''}/> Tell group admins how many of their members are pending</label>
+      <div class="legend"><span style="color:var(--ink-soft);">Sent once a day (about 9:00 AM) by the reminder workflow. ${loginsOn} login${loginsOn===1?'':'s'} ${loginsOn===1?'has':'have'} Reminders turned on · this device: ${escapeHtml(perm)}.</span></div>
+    </div>
+    <div class="card">
+      <h3>Recent reminders</h3>
+      <div class="table-scroll"><table>
+        <thead><tr><th>When</th><th>To</th><th>Message</th><th>Status</th></tr></thead>
+        <tbody>${history || `<tr><td colspan="4" style="text-align:center;color:var(--ink-soft);padding:16px;">Nothing sent yet.</td></tr>`}</tbody>
+      </table></div>
+    </div>`;
+}
 function chitLedger(chit){
   const rows = [];
   let opening = Number(chit.openingCarry)||0;
@@ -731,15 +875,24 @@ function renderInner(){
     return;
   }
 
-  const memberPerson = findPersonByPortalEmail(currentUser.email);
-  if(memberPerson){
-    app.innerHTML = renderMemberPortal(memberPerson);
+  const roles = rolesFor(currentUser.email);
+  const avail = availableRoles(roles);
+  // A plain login (not a member or group admin) is a portal admin — remember it, so the same
+  // email can later also be a group admin or member without losing control.
+  if(!roles.person && !roles.ref && currentUser.email && !(state.adminEmails||[]).some(a=>normEmail(a)===normEmail(currentUser.email))){
+    if(!state.adminEmails) state.adminEmails = [];
+    state.adminEmails.push(currentUser.email.trim());
+    scheduleSave();
+  }
+  const role = avail.includes(ui.role) ? ui.role : avail[0];
+  if(role==='admin') startReminderSubs();
+  if(role==='member'){
+    app.innerHTML = renderMemberPortal(roles.person);
     attachMemberPortalEvents();
     return;
   }
-  const refAdmin = findRefByPortalEmail(currentUser.email);
-  if(refAdmin){
-    app.innerHTML = renderRefPortal(refAdmin);
+  if(role==='group'){
+    app.innerHTML = renderRefPortal(roles.ref);
     attachRefPortalEvents();
     if(ui.modal) renderModal();
     return;
@@ -821,7 +974,11 @@ function renderMobileQuickNav(){
     <button class="${ui.view==='dashboard'?'active':''}" data-nav="dashboard">Dashboard</button>
     <button class="${ui.view==='reports'?'active':''}" data-nav="reports">Reports</button>
     <button class="${ui.view==='people'?'active':''}" data-nav="people">People</button>
+    <button class="${ui.view==='reminders'?'active':''}" data-nav="reminders">&#128276; Reminders</button>
   `;
+  availableRoles(rolesFor(currentUser && currentUser.email)).filter(r=>r!=='admin').forEach(r=>{
+    items += `<button data-role="${r}">${r==='group' ? 'Group Admin view' : 'My Chits view'}</button>`;
+  });
   state.chits.forEach(c=>{
     items += `<button class="${ui.view==='chit'&&ui.chitId===c.id?'active':''}" data-nav="chit" data-id="${c.id}">${escapeHtml(c.name)}</button>`;
   });
@@ -838,7 +995,15 @@ function renderSidebar(){
     </button>
     <button class="nav-item ${ui.view==='people'?'active':''}" data-nav="people">
       <span>&#128101; People</span>
+    </button>
+    <button class="nav-item ${ui.view==='reminders'?'active':''}" data-nav="reminders">
+      <span>&#128276; Reminders</span>
     </button>`;
+  const myRoles = availableRoles(rolesFor(currentUser && currentUser.email));
+  if(myRoles.length>1){
+    const label = {admin:'Portal Admin', group:'Group Admin', member:'My Chits'};
+    items += `<div class="nav-section-label">View as</div>` + myRoles.map(r=>`<button class="nav-item ${r==='admin'?'active':''}" data-role="${r}"><span>${label[r]}</span></button>`).join('');
+  }
   items += `<div class="nav-section-label">Chit Groups</div>`;
   state.chits.forEach(c=>{
     items += `<button class="nav-item ${ui.view==='chit'&&ui.chitId===c.id?'active':''}" data-nav="chit" data-id="${c.id}">
@@ -871,6 +1036,7 @@ function renderSidebar(){
 }
 
 function renderMain(){
+  if(ui.view==='reminders') return renderRemindersPage();
   if(ui.view==='dashboard') return renderDashboard();
   if(ui.view==='people') return renderPeople();
   if(ui.view==='reports') return renderReports();
@@ -941,6 +1107,35 @@ function renderCalcCheck(chit){
     </div>`;
 }
 
+function renderPayoutCard(chit){
+  const rows = [];
+  chit.members.forEach(m=>(m.slots||[]).filter(s=>s.takenChitNo).forEach(s=>rows.push({m, s})));
+  if(!rows.length) return '';
+  rows.sort((a,b)=>Number(a.s.takenChitNo)-Number(b.s.takenChitNo));
+  const body = rows.map(({m,s})=>{
+    const mk = addMonths(chit.startMonth, Number(s.takenChitNo)-1);
+    const amount = Number(s.chitTakenAmount) || payoutForMonth(chit, Number(s.takenChitNo)-1, mk);
+    const paid = s.payoutStatus==='paid';
+    const modeTxt = s.payoutMode==='upi' ? 'UPI' : s.payoutMode==='cash' ? 'Cash' : '';
+    return `<tr>
+      <td><b>${escapeHtml(personName(m.personId))}</b>${m.isOrg ? ' <span class="badge">Kovil</span>' : ''}</td>
+      <td class="right num">${s.takenChitNo}</td>
+      <td>${monthLabel(mk)}</td>
+      <td class="right num">${fmt(amount)}</td>
+      <td><button class="btn ghost small" data-payout-admin="1" data-chit="${chit.id}" data-member="${m.id}" data-slot="${s.id}">${paid ? `<span class="badge pos">Paid${modeTxt ? ' · '+modeTxt : ''}</span>` : '<span class="badge neg">Not paid</span>'}</button></td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="card">
+      <h3>Chit payouts</h3>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Member</th><th class="right">Chit no.</th><th>Month</th><th class="right">Amount</th><th>Payout</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table></div>
+      <div class="legend"><span style="color:var(--ink-soft);">Group admins record payouts by Cash or UPI and cannot undo them; you can change any payout here.</span></div>
+    </div>`;
+}
+
 function renderRemovedCard(chit){
   const list = chit.removed || [];
   if(!list.length) return '';
@@ -961,6 +1156,28 @@ function renderRemovedCard(chit){
         <tbody>${rows}</tbody>
       </table></div>
       <div class="legend"><span style="color:var(--ink-soft);">Restore brings back the same chit numbers, payment marks and notes. Adding the same person to this group again also restores them automatically.</span></div>
+    </div>`;
+}
+
+function renderAdminEmailsCard(){
+  const list = state.adminEmails || [];
+  const rows = list.map(e=>{
+    const person = findPersonByPortalEmail(e), ref = findRefByPortalEmail(e);
+    const also = [ref ? 'Group admin ('+ref.name+')' : '', person ? 'Member ('+person.name+')' : ''].filter(Boolean).join(' · ');
+    return `<tr><td><b>${escapeHtml(e)}</b></td><td>${also ? escapeHtml(also) : '<span style="color:var(--ink-soft);">portal admin only</span>'}</td><td><button class="btn ghost small" data-admin-del="${escapeAttr(e)}" title="Remove">✕</button></td></tr>`;
+  }).join('');
+  return `
+    <div class="card">
+      <div class="toolbar"><h3 style="margin:0;">Portal admins</h3></div>
+      <div class="toolbar" style="margin-bottom:10px;">
+        <input id="adminNewEmail" type="email" placeholder="portal admin login email" style="flex:1;min-width:170px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;"/>
+        <button class="btn primary small" id="btnAddAdmin">+ Add</button>
+      </div>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Login email</th><th>Also</th><th></th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="3" style="text-align:center;color:var(--ink-soft);padding:16px;">Admins appear here after they sign in.</td></tr>`}</tbody>
+      </table></div>
+      <div class="legend"><span style="color:var(--ink-soft);">Anyone who signs in with an email that is not a member or group admin is a portal admin and is listed here automatically. If a portal admin's email is also added as a group admin (Ref) or a member, they keep full control and get a "View as" switch between Portal Admin, Group Admin and My Chits. To give a group admin or member full control too, add their email here.</span></div>
     </div>`;
 }
 
@@ -1005,6 +1222,7 @@ function renderPeople(){
   return `
     <div class="topbar"><div><h2>People</h2><div class="sub">Add, edit or delete people here. A person can be in several chit groups; Ref By is set once for all of them.</div></div><button class="btn primary small" id="btnAddPerson">+ Add Person</button></div>
     ${renderRefManager()}
+    ${renderAdminEmailsCard()}
     ${renderCleanupCard()}
     <div class="card">
       <div class="table-scroll">
@@ -1134,9 +1352,10 @@ function renderMemberPortal(person){
 
   return `
     <div style="max-width:720px;width:100%;margin:0 auto;padding:20px 16px 60px;">
+      ${roleBarHtml('member')}
       <div class="topbar">
         <div><h2>My Chit Details</h2><div class="sub">${escapeHtml(person.name)}${totalSlots ? ' — ★ marks the chit you won; each colour is a different chit number' : ''}</div></div>
-        <button class="btn" id="btnMemberSignOut">Sign Out</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn" data-enable-reminders="1">&#128276; Reminders</button><button class="btn" id="btnMemberSignOut">Sign Out</button></div>
       </div>
       ${pills}
       ${bodyHtml}
@@ -1145,6 +1364,7 @@ function renderMemberPortal(person){
 }
 
 function attachMemberPortalEvents(){
+  attachRoleEvents(); attachNotifyEvents();
   document.getElementById('btnMemberSignOut')?.addEventListener('click', ()=> signOut(auth));
   document.querySelectorAll('[data-portal-view]').forEach(el=>{
     el.addEventListener('click', ()=>{ ui.portalView = el.dataset.portalView; render(); window.scrollTo(0,0); });
@@ -1320,7 +1540,7 @@ function renderRefPortal(ref){
           <thead><tr><th>Member</th><th>Group</th><th class="right">Chit no.</th><th>Month</th><th class="right">Amount</th><th>Payout</th></tr></thead>
           <tbody>${takenRows || `<tr><td colspan="6" style="text-align:center;color:var(--ink-soft);padding:16px;">No chit taken yet.</td></tr>`}</tbody>
         </table></div>
-        <div class="legend"><span style="color:var(--ink-soft);">Tap the Payout status to record that the chit money was paid — by Cash or UPI.</span></div>
+        <div class="legend"><span style="color:var(--ink-soft);">Tap the Payout status to record that the chit money was paid — by Cash or UPI. Once recorded as paid it is locked.</span></div>
       </div>
       <div class="card">
         <h3>Chit not taken (${notTaken.length})</h3>
@@ -1334,7 +1554,7 @@ function renderRefPortal(ref){
     const months = [];
     for(let i=0;i<g.chit.durationMonths;i++) months.push(addMonths(g.chit.startMonth, i));
     const vis = visibleMonthKeys(months, ui.refShowAll);
-    const head = vis.map(mk=>`<th class="right">${monthLabel(mk)}<br><button class="btn ghost small" style="padding:1px 6px;font-size:10.5px;" data-ref-markall="${g.chit.id}" data-month="${mk}">✓ All</button></th>`).join('');
+    const head = vis.map(mk=>`<th class="right">${monthLabel(mk)}</th>`).join('');
     const body = g.items.slice().sort((a,b)=>(a.member.isOrg?1:0)-(b.member.isOrg?1:0) || a.person.name.localeCompare(b.person.name)).map(({member, person})=>{
       const chips = (member.slots||[]).filter(s=>s.takenChitNo).map(s=>`<span class="badge" style="background:var(--gold-soft);color:var(--ink);margin:0 4px 4px 0;">No ${s.takenChitNo}</span>`).join('') || '<span style="color:var(--ink-soft);font-size:11.5px;">Not taken</span>';
       const cells = member.isOrg
@@ -1354,15 +1574,16 @@ function renderRefPortal(ref){
           <thead><tr><th>Member</th><th>Chit</th>${head}<th>Note</th></tr></thead>
           <tbody>${body}</tbody>
         </table></div>
-        <div class="legend"><span style="color:var(--ink-soft);">Tap a blank cell to mark it Paid; tap a marked cell to change it, clear it, or record Cash / UPI. "✓ All" marks all your members paid for that month.</span></div>
+        <div class="legend"><span style="color:var(--ink-soft);">Tap a cell to record how it was collected — Cash or UPI — or mark it not collected yet. Collected entries are locked (only the portal admin can change them). Notes can be edited.</span></div>
       </div>`;
   }
 
   return `
     <div style="max-width:900px;width:100%;margin:0 auto;padding:20px 16px 60px;">
+      ${roleBarHtml('group')}
       <div class="topbar">
         <div><h2>Group Admin</h2><div class="sub">${escapeHtml(ref.name)} — ${peopleCount} member${peopleCount===1?'':'s'} in ${groups.length} chit group${groups.length===1?'':'s'}</div></div>
-        <button class="btn" id="btnRefSignOut">Sign Out</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn" id="btnRefAddPerson">+ Add person</button><button class="btn" id="btnRefRemind">&#128276; Remind pending</button><button class="btn" data-enable-reminders="1">&#128276; Reminders</button><button class="btn" id="btnRefSignOut">Sign Out</button></div>
       </div>
       ${pills}
       ${groups.length ? bodyHtml : `<div class="empty-state"><div class="mark-big">&#3495;</div><p>No members are assigned to you yet.</p></div>`}
@@ -1370,6 +1591,20 @@ function renderRefPortal(ref){
 }
 
 function attachRefPortalEvents(){
+  attachRoleEvents(); attachNotifyEvents();
+  document.getElementById('btnRefAddPerson')?.addEventListener('click', ()=> openModal('refAddPerson', null, {}));
+  document.getElementById('btnRefRemind')?.addEventListener('click', ()=>{
+    const ref = findRefByPortalEmail(currentUser.email);
+    if(!ref) return;
+    const {targets, noEmail} = reminderTargets('ref:'+ref.name);
+    if(!targets.length){
+      notify(noEmail ? 'Members with pending dues have no login email yet, so they cannot get reminders. Ask the portal admin to add their emails on the People page.' : 'None of your members have pending dues — nothing to remind.');
+      return;
+    }
+    askConfirm('Send a reminder to '+targets.length+' of your member'+(targets.length===1?'':'s')+' with pending dues?'+(noEmail ? '\n\n'+noEmail+' more have no login email and will be skipped.' : ''), ()=>{
+      sendRemindersNow('Chit reminder', DEFAULT_REMINDER, targets);
+    }, 'Send reminders');
+  });
   document.getElementById('btnRefSignOut')?.addEventListener('click', ()=> signOut(auth));
   document.querySelectorAll('[data-ref-view]').forEach(el=>{
     el.addEventListener('click', ()=>{ ui.refView = el.dataset.refView; render(); window.scrollTo(0,0); });
@@ -1378,7 +1613,7 @@ function attachRefPortalEvents(){
     el.addEventListener('click', ()=>{ ui.refShowAll = !ui.refShowAll; render(); });
   });
   document.querySelectorAll('[data-cell]').forEach(el=>{
-    el.addEventListener('click', ()=> cyclePayment(el.dataset.chit, el.dataset.member, el.dataset.month));
+    el.addEventListener('click', ()=> collectCell(el.dataset.chit, el.dataset.member, el.dataset.month));
   });
   document.querySelectorAll('[data-ref-note]').forEach(el=>{
     el.addEventListener('change', ()=>{
@@ -1388,7 +1623,17 @@ function attachRefPortalEvents(){
     });
   });
   document.querySelectorAll('[data-payout]').forEach(el=>{
-    el.addEventListener('click', ()=> openModal('payoutStatus', el.dataset.chit, {memberId:el.dataset.member, slotId:el.dataset.slot}));
+    el.addEventListener('click', ()=>{
+      const chit = state.chits.find(c=>c.id===el.dataset.chit);
+      const m = chit && chit.members.find(x=>x.id===el.dataset.member);
+      const slot = m && (m.slots||[]).find(x=>x.id===el.dataset.slot);
+      if(!slot) return;
+      if(slot.payoutStatus==='paid'){
+        notify('This chit payout is already recorded as paid'+(slot.payoutMode ? ' by '+(slot.payoutMode==='upi' ? 'UPI' : 'Cash') : '')+'.\n\nIt is locked for group admins — ask the portal admin to change it.');
+        return;
+      }
+      openModal('payoutStatus', el.dataset.chit, {memberId:el.dataset.member, slotId:el.dataset.slot});
+    });
   });
   document.querySelectorAll('[data-ref-markall]').forEach(el=>{
     el.addEventListener('click', ()=>{
@@ -1919,6 +2164,8 @@ function renderChitView(chit){
       </div>
     </div>
 
+    ${renderPayoutCard(chit)}
+
     ${renderRemovedCard(chit)}
 
     <div class="card">
@@ -1981,6 +2228,7 @@ function attachEvents(){
       }, 'Delete forever');
     });
   });
+  attachRoleEvents(); attachNotifyEvents();
   document.getElementById('btnAddPerson')?.addEventListener('click', ()=> openModal('personEdit', null, {personId:null}));
   document.querySelectorAll('[data-person-edit]').forEach(el=>{
     el.addEventListener('click', ()=> openModal('personEdit', null, {personId: el.dataset.personEdit}));
@@ -1994,6 +2242,50 @@ function attachEvents(){
         deletePerson(p.id);
         scheduleSave();
       }, 'Delete person');
+    });
+  });
+  document.querySelectorAll('[data-payout-admin]').forEach(el=>{
+    el.addEventListener('click', ()=> openModal('payoutStatus', el.dataset.chit, {memberId:el.dataset.member, slotId:el.dataset.slot, admin:true}));
+  });
+  document.getElementById('remAudience')?.addEventListener('change', ()=>{ ui.remAudience = document.getElementById('remAudience').value; render(); });
+  document.getElementById('remTitle')?.addEventListener('input', ()=>{ ui.remTitle = document.getElementById('remTitle').value; });
+  document.getElementById('remBody')?.addEventListener('input', ()=>{ ui.remBody = document.getElementById('remBody').value; });
+  document.getElementById('btnQueueReminder')?.addEventListener('click', ()=>{
+    const {targets, noEmail} = reminderTargets(ui.remAudience || 'pending');
+    if(!targets.length) return;
+    const title = ui.remTitle!==undefined ? ui.remTitle : 'Chit reminder';
+    const body = ui.remBody!==undefined ? ui.remBody : DEFAULT_REMINDER;
+    askConfirm('Queue this reminder for '+targets.length+' '+(targets.length===1?'person':'people')+'?'+(noEmail ? '\n\n'+noEmail+' more have no login email and will be skipped.' : ''), ()=>{
+      sendRemindersNow(title, body, targets);
+    }, 'Queue reminder');
+  });
+  document.getElementById('btnRemTest')?.addEventListener('click', ()=>{
+    sendRemindersNow('Test reminder', 'This is a test reminder from the chit portal.', [{email:currentUser.email, name:'you', months:'', amount:0, group:''}]);
+  });
+  document.querySelectorAll('[data-rem-setting]').forEach(el=>{
+    el.addEventListener('change', ()=>{
+      const key = el.dataset.remSetting, on = el.checked;
+      const label = key==='autoMembers' ? 'daily reminders to members with pending dues' : 'daily pending summaries to group admins';
+      confirmChange((on ? 'Turn on ' : 'Turn off ')+label+'?', null, on ? 'On' : 'Off', ()=>{
+        if(!state.reminderSettings) state.reminderSettings = {};
+        state.reminderSettings[key] = on;
+      });
+    });
+  });
+  document.getElementById('btnAddAdmin')?.addEventListener('click', ()=>{
+    const email = (document.getElementById('adminNewEmail').value||'').trim();
+    if(!email) return;
+    if(!state.adminEmails) state.adminEmails = [];
+    if(state.adminEmails.some(a=>normEmail(a)===normEmail(email))){ notify(email+' is already a portal admin.'); return; }
+    confirmChange('Add a portal admin?', null, email+'\n\nThis login gets full control of the portal.', ()=>{ state.adminEmails.push(email); });
+  });
+  document.querySelectorAll('[data-admin-del]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const email = el.dataset.adminDel;
+      askConfirm('Remove '+email+' from the portal admin list?\n\nIf this login is not a member or group admin it still signs in as a portal admin.', ()=>{
+        state.adminEmails = (state.adminEmails||[]).filter(a=>normEmail(a)!==normEmail(email));
+        scheduleSave();
+      }, 'Remove');
     });
   });
   document.getElementById('btnPurgePlaceholders')?.addEventListener('click', ()=>{
@@ -2031,7 +2323,7 @@ function attachEvents(){
       if(!r) return;
       const email = el.value.trim(), ov = r.portalEmail||'';
       if(email===ov) return;
-      if(email && emailInUse(email, {refId:r.id})){ notify('That email is already used by another portal login — each login must be unique.'); return; }
+      if(email && emailInUse(email, {refId:r.id, kind:'ref'})){ notify('That email is already used by another group admin.'); return; }
       confirmChange('Change the group admin login for '+r.name+'?', ov||'none', email||'none', ()=>{ r.portalEmail = email; });
     });
   });
@@ -2105,7 +2397,7 @@ function attachEvents(){
         if(!p) return;
         const email = el.value.trim(), ov = p.portalEmail||'';
         if(email===ov) return;
-        if(email && emailInUse(email, {personId:p.id})){ notify('That login email is already used by someone else — each portal login must be unique.'); return; }
+        if(email && emailInUse(email, {personId:p.id})){ notify('That login email is already used by another person.'); return; }
         confirmChange('Change the portal login email for '+p.name+'?', ov||'none', email||'none', ()=>{ p.portalEmail = email; });
         return;
       }
@@ -2259,6 +2551,20 @@ function cyclePayment(chitId, memberId, monthKey){
   openModal('payStatus', chitId, {memberId, monthKey});
 }
 
+// Group admin taps a collection cell: record how it was collected. Collected entries are locked for them.
+function collectCell(chitId, memberId, monthKey){
+  const chit = state.chits.find(c=>c.id===chitId);
+  const m = chit && chit.members.find(x=>x.id===memberId);
+  if(!m || m.isOrg) return;
+  const st = m.payments[monthKey] || '';
+  if(st==='paid' || st==='late'){
+    const mode = (m.payModes||{})[monthKey];
+    notify('Already collected'+(mode ? ' by '+(mode==='upi' ? 'UPI' : 'Cash') : '')+'.\n\nCollections are locked for group admins — ask the portal admin if this needs to be changed.');
+    return;
+  }
+  openModal('collectStatus', chitId, {memberId, monthKey});
+}
+
 // In-app confirmation box (browser confirm() can be silently blocked on phones).
 function askConfirm(message, onYes, yesLabel, noLabel, onNo){
   openModal('confirm', null, {message, onYes, yesLabel: yesLabel||'Yes', noLabel: noLabel||'Cancel', onNo});
@@ -2271,13 +2577,40 @@ function notify(message){
 function confirmChange(title, fromTxt, toTxt, apply){
   askConfirm(title+'\n\n'+(fromTxt!==null && fromTxt!==undefined ? fromTxt+'  →  ' : '')+toTxt, ()=>{ apply(); scheduleSave(); }, 'Save change', 'Keep old');
 }
-// Is this login e-mail already used by a person or a Ref (group admin)?
+// Is this login e-mail already taken? A person and a group admin MAY share an email
+// (a group admin who also takes part in chits), but two people — or two group admins — may not.
+function normEmail(e){ return (e||'').trim().toLowerCase(); }
 function emailInUse(email, except){
-  const lower = (email||'').trim().toLowerCase();
+  const lower = normEmail(email);
   if(!lower) return false;
   except = except || {};
-  return state.people.some(p=>p.id!==except.personId && p.portalEmail && p.portalEmail.toLowerCase()===lower)
-      || (state.refs||[]).some(r=>r.id!==except.refId && r.portalEmail && r.portalEmail.toLowerCase()===lower);
+  if(except.kind==='ref') return (state.refs||[]).some(r=>r.id!==except.refId && normEmail(r.portalEmail)===lower);
+  return state.people.some(p=>p.id!==except.personId && normEmail(p.portalEmail)===lower);
+}
+// ---- Roles: one login can be portal admin, group admin and member at once ----
+function rolesFor(email){
+  const person = findPersonByPortalEmail(email);
+  const ref = findRefByPortalEmail(email);
+  const listed = (state.adminEmails||[]).some(a=>normEmail(a)===normEmail(email));
+  return {person, ref, admin: (!person && !ref) || listed};
+}
+function availableRoles(r){
+  const a = [];
+  if(r.admin) a.push('admin');
+  if(r.ref) a.push('group');
+  if(r.person) a.push('member');
+  return a;
+}
+function roleBarHtml(current){
+  const avail = availableRoles(rolesFor(currentUser && currentUser.email));
+  if(avail.length<2) return '';
+  const label = {admin:'Portal Admin', group:'Group Admin', member:'My Chits'};
+  return `<div class="portal-nav" style="position:static;margin-bottom:10px;"><span style="font-size:11.5px;color:var(--ink-soft);align-self:center;white-space:nowrap;">View as</span>${avail.map(r=>`<button class="${r===current?'active':''}" data-role="${r}">${label[r]}</button>`).join('')}</div>`;
+}
+function attachRoleEvents(){
+  document.querySelectorAll('[data-role]').forEach(el=>{
+    el.addEventListener('click', ()=>{ ui.role = el.dataset.role; ui.sidebarOpen = false; render(); window.scrollTo(0,0); });
+  });
 }
 // Removed members are kept (with their chit numbers and payments) so a mistaken delete can be undone.
 function archiveMember(chit, member){
@@ -2763,7 +3096,7 @@ function renderModal(){
       const email = (document.getElementById('peEmail').value||'').trim();
       if(!name){ err.textContent = 'Enter a name.'; return; }
       if(state.people.some(x=>(!p || x.id!==p.id) && x.name.toLowerCase()===name.toLowerCase())){ err.textContent = 'A person with this name already exists — edit that one instead.'; return; }
-      if(email && emailInUse(email, {personId: p ? p.id : null})){ err.textContent = 'That login email is already used by someone else.'; return; }
+      if(email && emailInUse(email, {personId: p ? p.id : null})){ err.textContent = 'That login email is already used by another person.'; return; }
       if(!p){
         state.people.push({id:uid('person'), name, refBy:refVal, portalEmail:email});
         scheduleSave(); ui.modal = null; render();
@@ -2776,6 +3109,95 @@ function renderModal(){
       if(email!==(p.portalEmail||'')) changes.push('Login email: '+(p.portalEmail||'none')+' → '+(email||'none'));
       if(!changes.length){ render(); return; }
       confirmChange('Save these changes?', null, changes.join('\n'), ()=>{ p.name = name; p.refBy = refVal; p.portalEmail = email; });
+    };
+  }
+
+  if(ui.modal.type==='collectStatus'){
+    const chit = state.chits.find(c=>c.id===ui.modal.chitId);
+    const m = chit.members.find(x=>x.id===ui.modal.memberId);
+    const mk = ui.modal.monthKey;
+    let mode = (m.payModes||{})[mk] || 'cash';
+    const modeBtn = (key,label)=>`<button class="btn small ${mode===key?'primary':''}" data-mode="${key}" style="flex:1;padding:10px;">${label}</button>`;
+    container.innerHTML = `
+      <div class="modal">
+        <h3>Collection</h3>
+        <p style="font-size:12.5px;color:var(--ink-soft);margin-top:-6px;">${escapeHtml(personName(m.personId))} — ${monthLabel(mk)} · ${fmt(monthlyAmount(chit))}</p>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">Collected by</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">${modeBtn('cash','Cash')}${modeBtn('upi','UPI')}</div>
+        <button class="btn primary" data-collect="paid" style="width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;font-size:14px;">✓ Collected</button>
+        <button class="btn" data-collect="late" style="width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;font-size:14px;">L Collected late (settles an earlier due)</button>
+        <button class="btn" data-collect="pending" style="width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;font-size:14px;">! Not collected yet</button>
+        <p style="font-size:11.5px;color:var(--ink-soft);margin:4px 0 0;">Once collected, only the portal admin can change it.</p>
+        <div class="modal-actions"><button class="btn" id="mCancel">Cancel</button></div>
+      </div>`;
+    document.body.appendChild(container);
+    document.getElementById('mCancel').onclick = closeModal;
+    document.querySelectorAll('[data-mode]').forEach(btn=>btn.addEventListener('click', ()=>{
+      mode = btn.dataset.mode;
+      document.querySelectorAll('[data-mode]').forEach(x=>x.classList.toggle('primary', x.dataset.mode===mode));
+    }));
+    document.querySelectorAll('[data-collect]').forEach(btn=>btn.addEventListener('click', ()=>{
+      const v = btn.dataset.collect;
+      if(v==='late'){ ui.modal = null; openModal('lateEntry', chit.id, {memberId:m.id, monthKey:mk, mode}); return; }
+      if(!m.payModes) m.payModes = {};
+      if(m.lateFor) delete m.lateFor[mk];
+      if(v==='paid'){ m.payments[mk] = 'paid'; m.payModes[mk] = mode; }
+      else { m.payments[mk] = 'pending'; delete m.payModes[mk]; }
+      scheduleSave(); ui.modal = null; render();
+    }));
+  }
+
+  if(ui.modal.type==='refAddPerson'){
+    const ref = findRefByPortalEmail(currentUser.email);
+    const myChitIds = Array.from(new Set(refMemberRows(ref).map(r=>r.chit.id)));
+    const myChits = state.chits.filter(c=>myChitIds.includes(c.id));
+    const free = state.people
+      .filter(p=>!(p.refBy||'').trim() && !isPlaceholder(p.name) && p.name!=='Kovil (Organization)')
+      .sort((a,b)=>a.name.localeCompare(b.name));
+    container.innerHTML = `
+      <div class="modal">
+        <h3>Add person to my group</h3>
+        <p style="font-size:12.5px;color:var(--ink-soft);margin-top:-6px;">They will be listed under ${escapeHtml(ref.name)}.</p>
+        <div class="field"><label>Someone who has no Ref yet</label>
+          <select id="raPerson"><option value="">— New person (type the name below) —</option>${free.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}</select></div>
+        <div class="field" id="raNameWrap"><label>New person's name</label><input id="raName" placeholder="Full name"/></div>
+        ${myChits.length ? `<div class="field"><label>Enrol in chit group(s)</label>${myChits.map(c=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px;"><input type="checkbox" class="raChit" value="${c.id}"/> ${escapeHtml(c.name)}</label>`).join('')}</div>` : ''}
+        <div id="raErr" style="color:var(--red);font-size:12.5px;min-height:16px;"></div>
+        <div class="modal-actions"><button class="btn" id="mCancel">Cancel</button><button class="btn primary" id="mSave">Add to my group</button></div>
+      </div>`;
+    document.body.appendChild(container);
+    document.getElementById('mCancel').onclick = closeModal;
+    document.getElementById('raPerson').addEventListener('change', ()=>{
+      document.getElementById('raNameWrap').style.display = document.getElementById('raPerson').value ? 'none' : '';
+    });
+    document.getElementById('mSave').onclick = ()=>{
+      const err = document.getElementById('raErr');
+      let personId = document.getElementById('raPerson').value;
+      if(!personId){
+        const name = (document.getElementById('raName').value||'').trim();
+        if(!name){ err.textContent = 'Enter a name, or pick someone from the list.'; return; }
+        const existing = state.people.find(p=>nameKey(p.name)===nameKey(name));
+        if(existing){
+          if((existing.refBy||'').trim() && nameKey(existing.refBy)!==nameKey(ref.name)){
+            err.textContent = name+' is already in '+existing.refBy+"'s group — ask the portal admin to move them."; return;
+          }
+          personId = existing.id;
+        } else {
+          personId = getOrCreatePerson(name);
+        }
+      }
+      const person = state.people.find(p=>p.id===personId);
+      person.refBy = ref.name;
+      document.querySelectorAll('.raChit').forEach(cb=>{
+        if(!cb.checked) return;
+        const chit = state.chits.find(c=>c.id===cb.value);
+        if(!chit || chit.members.some(m=>m.personId===personId)) return;
+        const archived = (chit.removed||[]).find(r=>r.personId===personId);
+        if(archived){ restoreMember(chit, archived.id); return; }
+        const sno = chit.members.length ? Math.max(...chit.members.map(m=>m.sno))+1 : 1;
+        chit.members.push({id:uid('m'), sno, personId, payments:{}, slots:[], lateFor:{}, payModes:{}});
+      });
+      scheduleSave(); ui.modal = null; render();
     };
   }
 
@@ -2792,7 +3214,7 @@ function renderModal(){
         <p style="font-size:12.5px;color:var(--ink-soft);margin-top:-6px;">${escapeHtml(personName(m.personId))} — chit ${slot.takenChitNo} · ${monthLabel(mk)} · ${fmt(Number(slot.chitTakenAmount)||0)}</p>
         ${opt('cash','✓ Paid by Cash')}
         ${opt('upi','✓ Paid by UPI')}
-        ${opt('','✕ Not paid yet')}
+        ${(ui.modal.admin || slot.payoutStatus==='paid') ? opt('','✕ Not paid yet') : ''}
         <div class="modal-actions"><button class="btn" id="mCancel">Cancel</button></div>
       </div>`;
     document.body.appendChild(container);
@@ -2916,6 +3338,7 @@ function init(){
       currentUser = null;
       state = null;
       if(unsubscribeSnapshot){ unsubscribeSnapshot(); unsubscribeSnapshot = null; }
+      if(reminderSubs){ reminderSubs.forEach(u=>u()); reminderSubs = null; }
     }
     render();
   });
