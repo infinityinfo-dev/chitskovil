@@ -430,6 +430,11 @@ function migrate(){
   });
   // Drop unused "New Member N" placeholder people (left over from the old Add button).
   state.people = state.people.filter(p=>!(isPlaceholder(p.name) && !p.portalEmail && !personInUse(p.id)));
+  // Group numbers: kept for identification; never reused, closed groups keep theirs.
+  if(!state.nextChitNo) state.nextChitNo = 1;
+  state.chits.forEach(c=>{ if(!c.no) c.no = state.nextChitNo++; });
+  const topNo = Math.max(0, ...state.chits.map(c=>c.no));
+  if(state.nextChitNo <= topNo) state.nextChitNo = topNo + 1;
 }
 
 /* ============================= DERIVED CALCULATIONS ============================= */
@@ -600,7 +605,7 @@ function payCellHtml(chit, m, mk){
   if(modeTxt) tips.push('Paid by '+(mode==='upi' ? 'UPI' : 'Cash'));
   const title = tips.length ? ` title="${escapeAttr(tips.join(' · '))}"` : '';
   const style = modeTxt ? ' style="flex-direction:column;line-height:1;gap:1px;"' : '';
-  return `<div class="pay-cell ${cls}" data-cell="1" data-chit="${chit.id}" data-member="${m.id}" data-month="${mk}"${title}${style}>${dispMap[st]||'·'}${modeTxt ? `<span style="font-size:7px;font-weight:700;">${modeTxt}</span>` : ''}</div>`;
+  return `<div class="pay-cell ${cls}" ${chit.closed ? '' : 'data-cell="1" '}data-chit="${chit.id}" data-member="${m.id}" data-month="${mk}"${title}${style}>${dispMap[st]||'·'}${modeTxt ? `<span style="font-size:7px;font-weight:700;">${modeTxt}</span>` : ''}</div>`;
 }
 // Point a member row at a different person; tidy up an unused "New Member N" placeholder person.
 function relinkMember(m, newPersonId){
@@ -727,6 +732,7 @@ function attachNotifyEvents(){
 function pendingDuesByPerson(filterFn){
   const map = {};
   state.chits.forEach(c=>{
+    if(c.closed) return;
     const mAmt = monthlyAmount(c);
     c.members.forEach(m=>{
       if(m.isOrg) return;
@@ -795,6 +801,7 @@ function renderRemindersPage(){
   return `
     <div class="topbar"><div><h2>Reminders</h2><div class="sub">Send push reminders about pending dues</div></div><button class="btn" data-enable-reminders="1">&#128276; Turn on for this device</button></div>
     ${FCM_VAPID_KEY ? '' : `<div class="card" style="border-color:var(--gold);"><h3>Setup needed</h3><p style="font-size:13px;margin:0;">Reminders are not switched on yet. Add the Web Push key to the app and set up the free reminder workflow — the steps are in <b>REMINDERS_SETUP.md</b>. You can already queue reminders below; they are sent once the workflow is running.</p></div>`}
+    ${(()=>{ const stuck = reminderItems.filter(i=>i.status==='queued' && i.createdAt && (Date.now()-new Date(i.createdAt).getTime())>30*60*1000).length; return stuck ? `<div class="card" style="border-color:var(--red);"><b style="color:var(--red);">${stuck} reminder${stuck===1?' is':'s are'} still waiting.</b> The sending workflow on GitHub is not running yet — follow steps 2–5 in REMINDERS_SETUP.md, then use Check reminders below.</div>` : ''; })()}
     <div class="card">
       <h3>Send a reminder</h3>
       <div class="field"><label>Who</label><select id="remAudience">${audOptions.map(([v,l])=>`<option value="${escapeAttr(v)}" ${v===audience?'selected':''}>${escapeHtml(l)}</option>`).join('')}</select></div>
@@ -808,7 +815,25 @@ function renderRemindersPage(){
       <h3>Automatic daily reminders</h3>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:6px;"><input type="checkbox" data-rem-setting="autoMembers" ${settings.autoMembers?'checked':''}/> Remind members who have pending dues</label>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;"><input type="checkbox" data-rem-setting="autoGroupAdmins" ${settings.autoGroupAdmins?'checked':''}/> Tell group admins how many of their members are pending</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:6px;"><input type="checkbox" data-rem-setting="autoBeforeChit" ${settings.autoBeforeChit?'checked':''}/> Remind ALL members 2 days before their chit date</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:6px;"><input type="checkbox" data-rem-setting="autoChitDay" ${settings.autoChitDay?'checked':''}/> Morning reminder to ALL members on the chit date</label>
       <div class="legend"><span style="color:var(--ink-soft);">Sent once a day (about 9:00 AM) by the reminder workflow. ${loginsOn} login${loginsOn===1?'':'s'} ${loginsOn===1?'has':'have'} Reminders turned on · this device: ${escapeHtml(perm)}.</span></div>
+    </div>
+    <div class="card">
+      <h3>Upcoming chit dates</h3>
+      ${(()=>{
+        const up = upcomingChitDates();
+        const noDay = activeChits().filter(c=>!c.chitDay);
+        const rows = up.map(u=>`<tr><td><b>${escapeHtml(chitLabel(u.chit))}</b></td><td>${prettyDate(u.date)}</td><td class="right">${u.inDays===0 ? 'today' : 'in '+u.inDays+' day'+(u.inDays===1?'':'s')}</td></tr>`).join('');
+        return (rows ? `<div class="table-scroll"><table><thead><tr><th>Group</th><th>Next chit date</th><th class="right">When</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p style="font-size:12.5px;color:var(--ink-soft);margin:0;">No group has a chit day set yet.</p>')
+          + (noDay.length ? `<p style="font-size:12px;color:var(--red);margin:8px 0 0;">Set the "Chit day" in group settings to enable date reminders for: ${noDay.map(c=>escapeHtml(chitLabel(c))).join(', ')}.</p>` : '');
+      })()}
+      <div class="legend"><span style="color:var(--ink-soft);">With the date switches on, every member of a running group gets a reminder 2 days before and again on the morning of the chit date (about 9:00 AM).</span></div>
+    </div>
+    <div class="card">
+      <h3>Troubleshooting</h3>
+      <div class="toolbar"><button class="btn small" id="btnRemCheck">Check reminders</button><button class="btn small" id="btnRemLocal">Show a test notification here</button></div>
+      <div class="legend"><span style="color:var(--ink-soft);">"Check reminders" shows which step is missing. "Show a test notification here" works without the GitHub workflow — it only tests this device.</span></div>
     </div>
     <div class="card">
       <h3>Recent reminders</h3>
@@ -817,6 +842,93 @@ function renderRemindersPage(){
         <tbody>${history || `<tr><td colspan="4" style="text-align:center;color:var(--ink-soft);padding:16px;">Nothing sent yet.</td></tr>`}</tbody>
       </table></div>
     </div>`;
+}
+// ---- Group numbers, closing, chit day ----
+function chitLabel(c){ return (c.no ? '#'+c.no+' · ' : '') + c.name; }
+function activeChits(){ return state.chits.filter(c=>!c.closed); }
+function lastMonthKey(c){ return addMonths(c.startMonth, (Number(c.durationMonths)||1)-1); }
+function isCompleted(c){ return lastMonthKey(c) < currentMonthKey(); }
+function chitPendingCount(c){
+  let n = 0;
+  c.members.forEach(m=>{ if(!m.isOrg) n += Object.values(m.payments||{}).filter(v=>v==='pending').length; });
+  return n;
+}
+function ordinal(n){ n = Number(n); const s = ['th','st','nd','rd'], v = n%100; return n+(s[(v-20)%10]||s[v]||s[0]); }
+function daysInMonth(ym){ const [y,m] = ym.split('-').map(Number); return new Date(y, m, 0).getDate(); }
+// The calendar date (YYYY-MM-DD) of this group's chit in a given month.
+function chitDateFor(c, monthKey){
+  const day = Math.min(Number(c.chitDay)||1, daysInMonth(monthKey));
+  return monthKey+'-'+String(day).padStart(2,'0');
+}
+function closedBanner(c){
+  if(c.closed){
+    return `<div class="card" style="border-color:var(--gold);"><b>Closed</b>${c.closedAt ? ' on '+new Date(c.closedAt).toLocaleDateString('en-IN') : ''} — group no. ${c.no||''} stays on the list for reference. Payments are read-only. <button class="btn small" data-reopen-chit="${c.id}">Reopen group</button></div>`;
+  }
+  if(isCompleted(c)){
+    return `<div class="card" style="border-color:var(--gold);">All ${c.durationMonths} months are over (last month ${monthLabel(lastMonthKey(c))}). <button class="btn primary small" data-close-chit="${c.id}">Close this group</button></div>`;
+  }
+  return '';
+}
+function renderClosedGroupsCard(){
+  const closed = state.chits.filter(c=>c.closed);
+  if(!closed.length) return '';
+  const rows = closed.map(c=>{
+    const led = chitLedger(c); const last = led[led.length-1];
+    const pend = chitPendingCount(c);
+    return `<tr><td><button class="btn ghost small" data-nav="chit" data-id="${c.id}">${escapeHtml(chitLabel(c))}</button></td>
+      <td>${c.closedAt ? new Date(c.closedAt).toLocaleDateString('en-IN') : ''}</td>
+      <td class="right num">${last ? fmt(last.closing) : '—'}</td>
+      <td class="right">${pend>0 ? `<span class="badge neg">${pend} unpaid</span>` : '<span class="badge pos">clear</span>'}</td></tr>`;
+  }).join('');
+  return `<div class="card"><h3>Closed groups (${closed.length})</h3><div class="table-scroll"><table>
+    <thead><tr><th>Group</th><th>Closed</th><th class="right">Final closing</th><th class="right">Dues</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="legend"><span style="color:var(--ink-soft);">Closed groups keep their number and stay readable; they are left out of the dashboard totals and reminders.</span></div></div>`;
+}
+function renderReadyToCloseCard(){
+  const ready = state.chits.filter(c=>!c.closed && isCompleted(c));
+  if(!ready.length) return '';
+  return `<div class="card" style="border-color:var(--gold);"><h3>Completed — ready to close</h3>${ready.map(c=>`<div class="toolbar" style="margin-bottom:6px;"><span>${escapeHtml(chitLabel(c))} · ended ${monthLabel(lastMonthKey(c))}</span><span style="flex:1;"></span><button class="btn small primary" data-close-chit="${c.id}">Close</button></div>`).join('')}</div>`;
+}
+function ymdToday(){ const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function addDaysYmd(ymd, n){ const d = new Date(ymd+'T00:00:00'); d.setDate(d.getDate()+n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function prettyDate(ymd){ return new Date(ymd+'T00:00:00').toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',year:'numeric'}); }
+// Next chit date of each running group that has a chit day set.
+function upcomingChitDates(){
+  const today = ymdToday(); const out = [];
+  activeChits().forEach(c=>{
+    if(!c.chitDay) return;
+    for(let i=0;i<(Number(c.durationMonths)||0);i++){
+      const date = chitDateFor(c, addMonths(c.startMonth, i));
+      if(date>=today){ out.push({chit:c, date, chitNo:i+1, inDays: Math.round((new Date(date+'T00:00:00')-new Date(today+'T00:00:00'))/86400000)}); break; }
+    }
+  });
+  return out.sort((a,b)=>a.date.localeCompare(b.date));
+}
+async function runReminderCheck(){
+  const lines = [];
+  const ok = (c,t)=>lines.push((c ? '✓ ' : '✗ ')+t);
+  ok(!!FCM_VAPID_KEY, 'Web Push key is in the app');
+  ok(remindersSupported(), 'This browser supports notifications');
+  const perm = (typeof Notification!=='undefined') ? Notification.permission : 'unsupported';
+  ok(perm==='granted', 'Notification permission: '+perm);
+  let reg = null;
+  try{ reg = await navigator.serviceWorker.getRegistration(); }catch(e){}
+  ok(!!(reg && reg.active), 'Service worker is active'+((reg && reg.active) ? '' : ' (reload the page once)'));
+  const mine = devicesFor(currentUser.email);
+  ok(mine>0, 'This login has '+mine+' device'+(mine===1?'':'s')+' registered'+(mine ? '' : ' — tap "Turn on for this device"'));
+  const stale = reminderItems.filter(i=>i.status==='queued' && i.createdAt && (Date.now()-new Date(i.createdAt).getTime())>30*60*1000).length;
+  ok(stale===0, stale ? stale+' reminder(s) have been "queued" for over 30 minutes — the sending workflow on GitHub is not running (REMINDERS_SETUP.md steps 2–5)' : 'No reminders stuck in the queue');
+  lines.push('ℹ '+reminderItems.filter(i=>i.status==='sent').length+' reminder(s) sent so far');
+  notify(lines.join('\n'));
+}
+async function showLocalTest(){
+  if(!remindersSupported()){ notify('This browser cannot show notifications.\n\nOn iPhone, add the app to the Home Screen first.'); return; }
+  try{
+    const perm = await Notification.requestPermission();
+    if(perm!=='granted'){ notify('Notifications are blocked for this site. Allow them in the browser settings first.'); return; }
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification('Test notification', {body:'If you can see this, notifications work on this device.', tag:'local-test'});
+  }catch(e){ notify('Could not show a notification: '+((e && e.message) || e)); }
 }
 function chitLedger(chit){
   const rows = [];
@@ -979,8 +1091,11 @@ function renderMobileQuickNav(){
   availableRoles(rolesFor(currentUser && currentUser.email)).filter(r=>r!=='admin').forEach(r=>{
     items += `<button data-role="${r}">${r==='group' ? 'Group Admin view' : 'My Chits view'}</button>`;
   });
-  state.chits.forEach(c=>{
-    items += `<button class="${ui.view==='chit'&&ui.chitId===c.id?'active':''}" data-nav="chit" data-id="${c.id}">${escapeHtml(c.name)}</button>`;
+  activeChits().forEach(c=>{
+    items += `<button class="${ui.view==='chit'&&ui.chitId===c.id?'active':''}" data-nav="chit" data-id="${c.id}">${escapeHtml(chitLabel(c))}</button>`;
+  });
+  state.chits.filter(c=>c.closed).forEach(c=>{
+    items += `<button class="${ui.view==='chit'&&ui.chitId===c.id?'active':''}" data-nav="chit" data-id="${c.id}" style="opacity:.7;">${escapeHtml(chitLabel(c))} ✓</button>`;
   });
   items += `<button id="btnNewChitQuick">+ New Chit</button>`;
   return items;
@@ -1005,11 +1120,15 @@ function renderSidebar(){
     items += `<div class="nav-section-label">View as</div>` + myRoles.map(r=>`<button class="nav-item ${r==='admin'?'active':''}" data-role="${r}"><span>${label[r]}</span></button>`).join('');
   }
   items += `<div class="nav-section-label">Chit Groups</div>`;
-  state.chits.forEach(c=>{
+  activeChits().forEach(c=>{
     items += `<button class="nav-item ${ui.view==='chit'&&ui.chitId===c.id?'active':''}" data-nav="chit" data-id="${c.id}">
-      <span><i class="dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--gold);margin-right:7px;"></i>${escapeHtml(c.name)}</span>
+      <span><i class="dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--gold);margin-right:7px;"></i>${escapeHtml(chitLabel(c))}</span>
     </button>`;
   });
+  const closedGroups = state.chits.filter(c=>c.closed);
+  if(closedGroups.length){
+    items += `<div class="nav-section-label">Closed groups</div>` + closedGroups.map(c=>`<button class="nav-item ${ui.view==='chit'&&ui.chitId===c.id?'active':''}" data-nav="chit" data-id="${c.id}" style="opacity:.75;"><span>${escapeHtml(chitLabel(c))} ✓</span></button>`).join('');
+  }
   items += `<button class="add-chit-btn" id="btnNewChit">+ New Chit Group</button>`;
   items += `
     <div class="nav-section-label">Cloud &amp; Backup</div>
@@ -1314,7 +1433,7 @@ function renderMemberPortal(person){
 
   const pills = `<div class="portal-nav">
       <button class="${view==='dashboard'?'active':''}" data-portal-view="dashboard">Dashboard</button>
-      ${groups.map(g=>`<button class="${view===g.chit.id?'active':''}" data-portal-view="${g.chit.id}">${escapeHtml(g.chit.name)}</button>`).join('')}
+      ${groups.map(g=>`<button class="${view===g.chit.id?'active':''}" data-portal-view="${g.chit.id}">${escapeHtml(chitLabel(g.chit))}</button>`).join('')}
     </div>`;
 
   let bodyHtml;
@@ -1322,7 +1441,7 @@ function renderMemberPortal(person){
     const cards = groups.map(g=>`
       <div class="card" style="cursor:pointer;" data-portal-view="${g.chit.id}">
         <div class="toolbar" style="margin-bottom:8px;">
-          <h3 style="margin:0;">${escapeHtml(g.chit.name)}</h3>
+          <h3 style="margin:0;">${escapeHtml(chitLabel(g.chit))}</h3>
           <span style="flex:1;"></span>
           ${g.badge}
         </div>
@@ -1341,7 +1460,7 @@ function renderMemberPortal(person){
     bodyHtml = `
       <div class="card">
         <div class="toolbar">
-          <h3 style="margin:0;">${escapeHtml(g.chit.name)}</h3>
+          <h3 style="margin:0;">${escapeHtml(chitLabel(g.chit))}</h3>
           <span style="flex:1;"></span>
           ${g.badge}
         </div>
@@ -1483,7 +1602,7 @@ function renderRefPortal(ref){
 
   const pills = `<div class="portal-nav">
       <button class="${view==='dashboard'?'active':''}" data-ref-view="dashboard">Dashboard</button>
-      ${groups.map(g=>`<button class="${view===g.chit.id?'active':''}" data-ref-view="${g.chit.id}">${escapeHtml(g.chit.name)}</button>`).join('')}
+      ${groups.map(g=>`<button class="${view===g.chit.id?'active':''}" data-ref-view="${g.chit.id}">${escapeHtml(chitLabel(g.chit))}</button>`).join('')}
     </div>`;
   const dash = n => n ? fmt(n) : '<span style="color:var(--ink-soft);">—</span>';
   const toggleBtn = `<button class="btn ghost small" data-ref-toggle="1">${ui.refShowAll ? 'Show recent 3 months' : 'Show all months'}</button>`;
@@ -1569,7 +1688,7 @@ function renderRefPortal(ref){
     }).join('');
     bodyHtml = `
       <div class="card">
-        <div class="toolbar"><h3 style="margin:0;">${escapeHtml(g.chit.name)}</h3><span style="flex:1;"></span>${months.length>3 ? toggleBtn : ''}</div>
+        <div class="toolbar"><h3 style="margin:0;">${escapeHtml(chitLabel(g.chit))}</h3><span style="flex:1;"></span>${months.length>3 ? toggleBtn : ''}</div>
         <div class="table-scroll"><table>
           <thead><tr><th>Member</th><th>Chit</th>${head}<th>Note</th></tr></thead>
           <tbody>${body}</tbody>
@@ -1695,7 +1814,7 @@ function renderReportMonth(){
     totalOpening+=row.opening; totalCollection+=row.collection; totalPendingRecv+=row.pendingReceived;
     totalTotalCollection+=row.totalCollection; totalChitPaid+=row.chitPaid; totalClosing+=row.closing;
     groupRows.push(`<tr>
-      <td><button class="btn ghost small" data-nav="chit" data-id="${c.id}">${escapeHtml(c.name)}</button></td>
+      <td><button class="btn ghost small" data-nav="chit" data-id="${c.id}">${escapeHtml(chitLabel(c))}</button></td>
       <td class="right num">${fmt(row.opening)}</td>
       <td class="right num">${fmt(row.collection)}</td>
       <td class="right num">${fmt(row.pendingReceived)}</td>
@@ -1765,7 +1884,7 @@ function renderReportChitWise(){
     return `
       <div class="card">
         <div class="toolbar">
-          <h3 style="margin:0;">${escapeHtml(c.name)}</h3>
+          <h3 style="margin:0;">${escapeHtml(chitLabel(c))}</h3>
           <span style="flex:1;"></span>
           <button class="btn ghost small" data-nav="chit" data-id="${c.id}">Open Group →</button>
         </div>
@@ -1924,18 +2043,18 @@ function allMonthsUnion(){
 }
 
 function renderDashboard(){
-  if(state.chits.length===0){
+  if(activeChits().length===0){
     return `<div class="topbar"><div><h2>Temple Dashboard</h2><div class="sub">Combined cash flow across every chit group</div></div></div>
-      <div class="empty-state"><div class="mark-big">&#3495;</div><p>No chit groups yet. Create one from the sidebar.</p></div>`;
+      <div class="empty-state"><div class="mark-big">&#3495;</div><p>${activeChits().length ? 'All chit groups are closed.' : 'No chit groups yet. Create one from the sidebar.'}</p></div>${renderClosedGroupsCard()}`;
   }
   const months = allMonthsUnion();
 
   const perChitLedger = {};
-  state.chits.forEach(c=>{ perChitLedger[c.id] = chitLedger(c); });
+  activeChits().forEach(c=>{ perChitLedger[c.id] = chitLedger(c); });
 
   const agg = months.map(mk=>{
     let opening=0, collection=0, pendingRec=0, totalCollection=0, chitPaid=0, closing=0, any=false;
-    state.chits.forEach(c=>{
+    activeChits().forEach(c=>{
       const rows = perChitLedger[c.id];
       const row = rows.find(r=>r.monthKey===mk);
       if(row){ any=true; opening+=row.opening; collection+=row.collection; pendingRec+=row.pendingReceived; totalCollection+=row.totalCollection; chitPaid+=row.chitPaid; closing+=row.closing; }
@@ -1944,15 +2063,15 @@ function renderDashboard(){
   }).filter(r=>r.any);
 
   const latest = agg[agg.length-1];
-  const totalMembers = state.chits.reduce((s,c)=>s+c.members.length,0);
-  const totalPendingDues = state.chits.reduce((s,c)=>{
+  const totalMembers = activeChits().reduce((s,c)=>s+c.members.length,0);
+  const totalPendingDues = activeChits().reduce((s,c)=>{
     const rows = chitLedger(c);
     return s + rows.reduce((s2,r)=>s2+r.outstanding,0);
   },0);
 
   const statCards = `
     <div class="stat-row">
-      <div class="stat"><div class="label">Active Chit Groups</div><div class="value">${state.chits.length}</div></div>
+      <div class="stat"><div class="label">Active Chit Groups</div><div class="value">${activeChits().length}</div></div>
       <div class="stat"><div class="label">Total Members Enrolled</div><div class="value">${totalMembers}</div></div>
       <div class="stat"><div class="label">Latest Closing Balance</div><div class="value ${latest&&latest.closing<0?'neg':'pos'}">${latest?fmt(latest.closing):'₹0'}</div></div>
       <div class="stat"><div class="label">Outstanding Dues (unpaid)</div><div class="value ${totalPendingDues>0?'neg':''}">${fmt(totalPendingDues)}</div></div>
@@ -1976,7 +2095,9 @@ function renderDashboard(){
     <div class="topbar">
       <div><h2>Temple Dashboard</h2><div class="sub">Combined cash flow across every chit group — mirrors the workbook's "Summary DB" tab</div></div>
     </div>
+    ${renderReadyToCloseCard()}
     ${statCards}
+    ${renderClosedGroupsCard()}
     <div class="card">
       <div class="toolbar">
         <h3 style="margin:0;">${ui.dashboardExpanded ? 'All-Chit Monthly Ledger — full history' : 'All-Chit Monthly Ledger — last 3 months'}</h3>
@@ -2000,11 +2121,11 @@ function renderDashboard(){
         <table>
           <thead><tr><th>Chit Group</th><th class="right">Value</th><th class="right">Members</th><th class="right">Monthly Amt</th><th class="right">Latest Closing</th></tr></thead>
           <tbody>
-          ${state.chits.map(c=>{
+          ${activeChits().map(c=>{
             const rows2 = chitLedger(c);
             const last = rows2[rows2.length-1];
             return `<tr>
-              <td><button class="btn ghost small" data-nav="chit" data-id="${c.id}">${escapeHtml(c.name)}</button></td>
+              <td><button class="btn ghost small" data-nav="chit" data-id="${c.id}">${escapeHtml(chitLabel(c))}</button></td>
               <td class="right num">${fmt(c.chitValue)}</td>
               <td class="right num">${c.members.length}/${c.totalMembers}</td>
               <td class="right num">${fmt(monthlyAmount(c))}</td>
@@ -2076,7 +2197,7 @@ function renderChitView(chit){
       </td>
       <td class="right num">${pendingCount>0?`<span class="badge neg">${pendingCount}</span>`:'0'}</td>
       ${cells}
-      <td><button class="btn ghost small" data-del-member="${m.id}" data-chit="${chit.id}" title="Remove member">✕</button></td>
+      <td>${chit.closed ? '' : `<button class="btn ghost small" data-del-member="${m.id}" data-chit="${chit.id}" title="Remove member">✕</button>`}</td>
     </tr>`;
   }).join('');
 
@@ -2113,11 +2234,12 @@ function renderChitView(chit){
   return `
     <div class="topbar">
       <div>
-        <h2>${escapeHtml(chit.name)} <button class="btn ghost small" data-edit-chit="${chit.id}">Edit</button></h2>
-        <div class="sub">Chit value ${fmt(chit.chitValue)} · ${chit.totalMembers} members · monthly instalment ${fmt(mAmt)} · starts ${monthLabel(chit.startMonth)}</div>
+        <h2>${escapeHtml(chitLabel(chit))} <button class="btn ghost small" data-edit-chit="${chit.id}">Edit</button></h2>
+        <div class="sub">Chit value ${fmt(chit.chitValue)} · ${chit.totalMembers} members · monthly instalment ${fmt(mAmt)} · starts ${monthLabel(chit.startMonth)}${chit.chitDay ? ' · chit on the '+ordinal(chit.chitDay)+' of each month' : ''}</div>
       </div>
-      <button class="btn danger" data-del-chit="${chit.id}">Delete Group</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">${chit.closed ? `<button class="btn" data-reopen-chit="${chit.id}">Reopen group</button>` : `<button class="btn" data-close-chit="${chit.id}">Close group</button>`}<button class="btn danger" data-del-chit="${chit.id}">Delete Group</button></div>
     </div>
+    ${closedBanner(chit)}
 
     <div class="stat-row">
       <div class="stat"><div class="label">Monthly Instalment</div><div class="value">${fmt(mAmt)}</div></div>
@@ -2143,8 +2265,8 @@ function renderChitView(chit){
         <h3 style="margin:0;">Members &amp; Monthly Collection</h3>
         <span style="flex:1;"></span>
         ${months.length>3 ? `<button class="btn ghost small" id="btnToggleMonths">${ui.showAllMonths ? 'Show recent 3 months' : 'Show all months'}</button>` : ''}
-        <button class="btn ghost small" id="btnAddExistingMember" ${availableToAdd.length===0?'disabled':''}>+ Add Existing Member</button>
-        <button class="btn primary small" id="btnAddMember">+ New Member</button>
+        ${chit.closed ? '' : `<button class="btn ghost small" id="btnAddExistingMember" ${availableToAdd.length===0?'disabled':''}>+ Add Existing Member</button>
+        <button class="btn primary small" id="btnAddMember">+ New Member</button>`}
       </div>
       <div class="table-scroll">
         <table>
@@ -2259,17 +2381,37 @@ function attachEvents(){
       sendRemindersNow(title, body, targets);
     }, 'Queue reminder');
   });
+  document.getElementById('btnRemCheck')?.addEventListener('click', ()=>{ runReminderCheck(); });
+  document.getElementById('btnRemLocal')?.addEventListener('click', ()=>{ showLocalTest(); });
   document.getElementById('btnRemTest')?.addEventListener('click', ()=>{
     sendRemindersNow('Test reminder', 'This is a test reminder from the chit portal.', [{email:currentUser.email, name:'you', months:'', amount:0, group:''}]);
   });
   document.querySelectorAll('[data-rem-setting]').forEach(el=>{
     el.addEventListener('change', ()=>{
       const key = el.dataset.remSetting, on = el.checked;
-      const label = key==='autoMembers' ? 'daily reminders to members with pending dues' : 'daily pending summaries to group admins';
+      const label = ({autoMembers:'daily reminders to members with pending dues', autoGroupAdmins:'daily pending summaries to group admins', autoBeforeChit:'reminders to ALL members 2 days before the chit date', autoChitDay:'the chit-day morning reminder to ALL members'})[key] || key;
       confirmChange((on ? 'Turn on ' : 'Turn off ')+label+'?', null, on ? 'On' : 'Off', ()=>{
         if(!state.reminderSettings) state.reminderSettings = {};
         state.reminderSettings[key] = on;
       });
+    });
+  });
+  document.querySelectorAll('[data-close-chit]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const chit = state.chits.find(c=>c.id===el.dataset.closeChit);
+      if(!chit) return;
+      const pend = chitPendingCount(chit);
+      askConfirm('Close "'+chitLabel(chit)+'"?\n\nIts number stays on the list and everything remains readable. Payments become read-only and it is left out of dashboard totals and reminders.'+(pend ? '\n\n⚠ '+pend+' pending instalment(s) are still unpaid in this group.' : '')+'\n\nYou can reopen it later.', ()=>{
+        chit.closed = true; chit.closedAt = new Date().toISOString();
+        scheduleSave();
+      }, 'Close group');
+    });
+  });
+  document.querySelectorAll('[data-reopen-chit]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const chit = state.chits.find(c=>c.id===el.dataset.reopenChit);
+      if(!chit) return;
+      askConfirm('Reopen "'+chitLabel(chit)+'"?', ()=>{ chit.closed = false; delete chit.closedAt; scheduleSave(); }, 'Reopen');
     });
   });
   document.getElementById('btnAddAdmin')?.addEventListener('click', ()=>{
@@ -2743,6 +2885,7 @@ function renderModal(){
     container.innerHTML = `
       <div class="modal">
         <h3>New Chit Group</h3>
+        <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">This will be group no. ${state.nextChitNo || (Math.max(0,...state.chits.map(c=>c.no||0))+1)} — numbers continue and are never reused.</p>
         <div class="field"><label>Group Name</label><input id="fName" placeholder="e.g. 2 Lakh Chit No-6"/></div>
         <div class="field-row">
           <div class="field"><label>Chit Value (₹)</label><input id="fValue" type="number" placeholder="200000"/></div>
@@ -2753,6 +2896,7 @@ function renderModal(){
           <div class="field"><label>Duration (months) — members + 1 Kovil seat</label><input id="fDuration" type="number" placeholder="21"/></div>
         </div>
         <div class="field"><label>Opening Balance Carried Forward (₹)</label><input id="fOpening" type="number" value="0"/></div>
+        <div class="field"><label>Chit day of the month (for date reminders)</label><input id="fChitDay" type="number" min="1" max="31" placeholder="e.g. 5"/></div>
         <div class="field">
           <label>Chit Distribution Schedule (optional)</label>
           <textarea id="fSchedule" rows="4" placeholder="One per line — chit no: amount&#10;1: 22000&#10;2: 23000&#10;3: 24000" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-family:'JetBrains Mono',monospace;"></textarea>
@@ -2802,13 +2946,16 @@ function renderModal(){
       const start = document.getElementById('fStart').value || currentMonthKey();
       const duration = Number(document.getElementById('fDuration').value)||members;
       const opening = Number(document.getElementById('fOpening').value)||0;
+      const chitDay = Math.min(31, Math.max(1, Number(document.getElementById('fChitDay').value)||0)) || '';
       const typedSchedule = parseScheduleText(document.getElementById('fSchedule').value);
       if(!state.scheduleTemplates) state.scheduleTemplates = {};
       const existingShared = state.scheduleTemplates[String(value)];
       const createGroup = (replaceShared)=>{
         if(replaceShared) state.scheduleTemplates[String(value)] = Object.assign({}, existingShared, typedSchedule);
         const id = uid('chit');
-        const chit = {id, name, chitValue:value, totalMembers:members, durationMonths:duration, startMonth:start, openingCarry:opening, members:[], payoutOverride:{}, distributionSchedule:{}, removed:[], denoms:{}, orgChecked:true};
+        const chitNo = state.nextChitNo || (Math.max(0,...state.chits.map(c=>c.no||0))+1);
+        state.nextChitNo = chitNo + 1;
+        const chit = {id, no:chitNo, name, chitValue:value, totalMembers:members, durationMonths:duration, startMonth:start, openingCarry:opening, chitDay, members:[], payoutOverride:{}, distributionSchedule:{}, removed:[], denoms:{}, orgChecked:true};
         state.chits.push(chit);
         addKovilSeat(chit);                       // the organization seat, chit no. 1 by default
         scheduleSave();
@@ -2842,6 +2989,7 @@ function renderModal(){
           <div class="field"><label>Duration (months)</label><input id="fDuration" type="number" value="${chit.durationMonths}"/></div>
         </div>
         <div class="field"><label>Opening Balance Carried Forward (₹)</label><input id="fOpening" type="number" value="${chit.openingCarry}"/></div>
+        <div class="field"><label>Chit day of the month (for date reminders)</label><input id="fChitDay" type="number" min="1" max="31" value="${chit.chitDay||''}"/></div>
         <div class="modal-actions">
           <button class="btn" id="mCancel">Cancel</button>
           <button class="btn primary" id="mSave">Save Changes</button>
@@ -2857,8 +3005,9 @@ function renderModal(){
         startMonth: document.getElementById('fStart').value || chit.startMonth,
         durationMonths: Number(document.getElementById('fDuration').value)||chit.durationMonths,
         openingCarry: Number(document.getElementById('fOpening').value)||0,
+        chitDay: Math.min(31, Math.max(1, Number(document.getElementById('fChitDay').value)||0)) || '',
       };
-      const labels = {name:'Name', chitValue:'Chit value', totalMembers:'Members', startMonth:'Start month', durationMonths:'Duration (months)', openingCarry:'Opening balance'};
+      const labels = {name:'Name', chitValue:'Chit value', totalMembers:'Members', startMonth:'Start month', durationMonths:'Duration (months)', openingCarry:'Opening balance', chitDay:'Chit day'};
       const changes = Object.keys(nv).filter(k=>String(nv[k])!==String(chit[k]===undefined?'':chit[k])).map(k=>labels[k]+': '+chit[k]+' → '+nv[k]);
       ui.modal = null;
       if(!changes.length){ render(); return; }
@@ -2874,7 +3023,7 @@ function renderModal(){
     container.innerHTML = `
       <div class="modal">
         <h3>Chit Distribution Schedule</h3>
-        <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">Shared by every ${fmt(chit.chitValue)} chit group (${sameValue.length}): ${sameValue.map(c=>escapeHtml(c.name)).join(', ')}. Change it once here and all of them use it. Saving also updates the amount on every member's slot with these chit numbers, and the Chit Paid column follows.</p>
+        <p style="font-size:12px;color:var(--ink-soft);margin-top:-6px;">Shared by every ${fmt(chit.chitValue)} chit group (${sameValue.length}): ${sameValue.map(c=>escapeHtml(chitLabel(c))).join(', ')}. Change it once here and all of them use it. Saving also updates the amount on every member's slot with these chit numbers, and the Chit Paid column follows.</p>
         <div class="field">
           <label>One per line — chit no: amount</label>
           <textarea id="fSchedule" rows="8" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-family:'JetBrains Mono',monospace;">${escapeHtml(scheduleToText(effectiveSchedule(chit), maxMembers, maxDuration))}</textarea>
@@ -3161,7 +3310,7 @@ function renderModal(){
         <div class="field"><label>Someone who has no Ref yet</label>
           <select id="raPerson"><option value="">— New person (type the name below) —</option>${free.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}</select></div>
         <div class="field" id="raNameWrap"><label>New person's name</label><input id="raName" placeholder="Full name"/></div>
-        ${myChits.length ? `<div class="field"><label>Enrol in chit group(s)</label>${myChits.map(c=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px;"><input type="checkbox" class="raChit" value="${c.id}"/> ${escapeHtml(c.name)}</label>`).join('')}</div>` : ''}
+        ${myChits.length ? `<div class="field"><label>Enrol in chit group(s)</label>${myChits.map(c=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px;"><input type="checkbox" class="raChit" value="${c.id}"/> ${escapeHtml(chitLabel(c))}</label>`).join('')}</div>` : ''}
         <div id="raErr" style="color:var(--red);font-size:12.5px;min-height:16px;"></div>
         <div class="modal-actions"><button class="btn" id="mCancel">Cancel</button><button class="btn primary" id="mSave">Add to my group</button></div>
       </div>`;
