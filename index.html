@@ -809,7 +809,7 @@ function renderRemindersPage(){
       <div class="field"><label>Message</label><textarea id="remBody" rows="3" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;">${escapeHtml(body)}</textarea>
         <p style="font-size:11px;color:var(--ink-soft);margin:4px 0 0;">{name} {months} {amount} {group} are filled in for each person.</p></div>
       <p style="font-size:12.5px;margin:6px 0;"><b>${targets.length}</b> ${targets.length===1?'person':'people'} will get this${targets.length ? ' — '+withDevice+' with Reminders turned on' : ''}.${noEmail ? ' '+noEmail+' more have no login email and cannot be reached.' : ''}${preview ? '<br><span style="color:var(--ink-soft);">'+preview+'</span>' : ''}</p>
-      <div class="toolbar"><button class="btn primary" id="btnQueueReminder" ${targets.length?'':'disabled'}>Queue reminder</button><button class="btn ghost small" id="btnRemTest">Send a test to me</button></div>
+      <div class="toolbar"><button class="btn primary" id="btnQueueReminder" ${targets.length?'':'disabled'}>Queue reminder</button><button class="btn" id="btnQueueAll">Queue to ALL</button><button class="btn ghost small" id="btnRemTest">Send a test to me</button></div>
     </div>
     <div class="card">
       <h3>Automatic daily reminders</h3>
@@ -837,6 +837,7 @@ function renderRemindersPage(){
     </div>
     <div class="card">
       <h3>Recent reminders</h3>
+      <div class="toolbar"><button class="btn small" id="btnClearQueue" ${reminderItems.some(i=>i.status==='queued')?'':'disabled'}>Clear pending (${reminderItems.filter(i=>i.status==='queued').length})</button></div>
       <div class="table-scroll"><table>
         <thead><tr><th>When</th><th>To</th><th>Message</th><th>Status</th></tr></thead>
         <tbody>${history || `<tr><td colspan="4" style="text-align:center;color:var(--ink-soft);padding:16px;">Nothing sent yet.</td></tr>`}</tbody>
@@ -2380,6 +2381,25 @@ function attachEvents(){
     askConfirm('Queue this reminder for '+targets.length+' '+(targets.length===1?'person':'people')+'?'+(noEmail ? '\n\n'+noEmail+' more have no login email and will be skipped.' : ''), ()=>{
       sendRemindersNow(title, body, targets);
     }, 'Queue reminder');
+  });
+  document.getElementById('btnQueueAll')?.addEventListener('click', ()=>{
+    const {targets, noEmail} = reminderTargets('all');
+    if(!targets.length){ notify('Nobody has a login email yet.'); return; }
+    const title = ui.remTitle!==undefined ? ui.remTitle : 'Chit reminder';
+    const body = ui.remBody!==undefined ? ui.remBody : DEFAULT_REMINDER;
+    askConfirm('Queue this reminder for ALL '+targets.length+' people with a login?'+(noEmail ? '\n\n'+noEmail+' more have no login email and will be skipped.' : ''), ()=>{
+      sendRemindersNow(title, body, targets);
+    }, 'Queue to all');
+  });
+  document.getElementById('btnClearQueue')?.addEventListener('click', ()=>{
+    const n = reminderItems.filter(i=>i.status==='queued').length;
+    if(!n) return;
+    askConfirm('Cancel '+n+' pending reminder'+(n===1?'':'s')+'?\n\nThey will NOT be sent.', ()=>{
+      const items = reminderItems.map(i=> i.status==='queued' ? {...i, status:'cancelled'} : i);
+      setDoc(doc(db,'chitLedgerApp','reminders'), {items}, {merge:true})
+        .then(()=>notify(n+' pending reminder'+(n===1?'':'s')+' cancelled.'))
+        .catch(e=>notify('Could not clear the queue: '+((e && e.message) || e)));
+    }, 'Clear pending');
   });
   document.getElementById('btnRemCheck')?.addEventListener('click', ()=>{ runReminderCheck(); });
   document.getElementById('btnRemLocal')?.addEventListener('click', ()=>{ showLocalTest(); });
