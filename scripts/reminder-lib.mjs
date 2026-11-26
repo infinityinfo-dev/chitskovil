@@ -18,6 +18,7 @@ export function monthlyAmount(chit){ return chit.totalMembers ? chit.chitValue /
 export function pendingByPerson(state){
   const map = {};
   (state.chits || []).forEach(c => {
+    if (c.closed) return;
     const mAmt = monthlyAmount(c);
     (c.members || []).forEach(m => {
       if (m.isOrg) return;
@@ -37,8 +38,57 @@ export function fillTemplate(tpl, t){
   return (tpl || '').replace(/\{name\}/g, t.name || '').replace(/\{months\}/g, t.months || '')
     .replace(/\{amount\}/g, t.amount ? rupees(t.amount) : '').replace(/\{group\}/g, t.group || '');
 }
+// ---- chit dates ----
+export function istToday(now){ return new Date((now === undefined ? Date.now() : now) + 5.5 * 3600 * 1000).toISOString().slice(0, 10); }
+export function addDays(ymd, n){ const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+export function daysInMonth(ym){ const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
+export function chitDateFor(c, monthKey){
+  const day = Math.min(Number(c.chitDay) || 1, daysInMonth(monthKey));
+  return monthKey + '-' + String(day).padStart(2, '0');
+}
+export function prettyDate(ymd){
+  return new Date(ymd + 'T00:00:00Z').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+// Groups whose chit date is today or `daysBefore` days from today.
+export function chitDateEvents(state, todayYmd, daysBefore){
+  const out = [];
+  (state.chits || []).forEach(c => {
+    if (c.closed || !c.chitDay) return;
+    for (let i = 0; i < (Number(c.durationMonths) || 0); i++) {
+      const date = chitDateFor(c, addMonths(c.startMonth, i));
+      if (date === todayYmd) out.push({ kind: 'today', chit: c, date, chitNo: i + 1 });
+      if (date === addDays(todayYmd, daysBefore)) out.push({ kind: 'before', chit: c, date, chitNo: i + 1 });
+    }
+  });
+  return out;
+}
+
 // The automatic daily reminders, according to the switches on the Reminders page.
-export function autoMessages(state){
+export function autoMessages(state, now){
+  const out = autoPendingMessages(state);
+  const s = state.reminderSettings || {};
+  if (s.autoBeforeChit || s.autoChitDay) {
+    const daysBefore = Number(s.remindDaysBefore) || 2;
+    chitDateEvents(state, istToday(now), daysBefore).forEach(ev => {
+      if (ev.kind === 'before' && !s.autoBeforeChit) return;
+      if (ev.kind === 'today' && !s.autoChitDay) return;
+      const mAmt = monthlyAmount(ev.chit);
+      (ev.chit.members || []).forEach(m => {
+        if (m.isOrg) return;
+        const p = (state.people || []).find(x => x.id === m.personId);
+        if (!p || !p.portalEmail) return;
+        out.push(ev.kind === 'before'
+          ? { email: p.portalEmail, title: 'Chit day coming up',
+              body: 'Hi ' + p.name + ', the ' + ev.chit.name + ' chit is on ' + prettyDate(ev.date) + ' (in ' + daysBefore + ' days). Your instalment: ' + rupees(mAmt) + '.' }
+          : { email: p.portalEmail, title: 'Chit day today',
+              body: 'Good morning ' + p.name + '! Today is the ' + ev.chit.name + ' chit day. Please pay your instalment of ' + rupees(mAmt) + '.' });
+      });
+    });
+  }
+  return out;
+}
+
+function autoPendingMessages(state){
   const s = state.reminderSettings || {};
   const out = [];
   const per = pendingByPerson(state);
